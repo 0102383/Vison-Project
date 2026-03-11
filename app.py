@@ -71,6 +71,8 @@ if user_input:
                 
                 # Save the AI's answer
                 st.session_state.messages.append({"role": "assistant", "content": answer})
-            except Exception as e:
-                st.error("Error connecting to the AI. Did you add the Groq API Key?")
+            
+except Exception as e:
+                st.error(f"SYSTEM ERROR: {e}")
+
 
