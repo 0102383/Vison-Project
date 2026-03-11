@@ -50,68 +50,75 @@ def clear_memory():
 
 init_db()
 
-# 3. UI LAYOUT
-st.set_page_config(page_title="VISON AI", page_icon="🚀")
-# 3. UI LAYOUT
-st.set_page_config(page_title="VISON AI", page_icon="🚀")
+# 3. UI LAYOUT & CUSTOM CSS
+st.set_page_config(page_title="VISON AI", page_icon="🚀", layout="wide")
 
-# --- CUSTOM DESIGN START ---
-st.markdown("""/* Glow effect for AI responses */
-    [data-testid="stChatMessageAssistant"] {
-        border-left: 5px solid #00c6ff !important;
-        background-color: #161b22 !important;
-        box-shadow: 0px 4px 10px rgba(0, 198, 255, 0.1);
-    }
-
-    /* Style for User messages */
-    [data-testid="stChatMessageUser"] {
-        border-left: 5px solid #8b949e !important;
-        background-color: #0d1117 !important;
-    }
+st.markdown("""
     <style>
-    /* Dark mode background */
-    .stApp {
-        background-color: #0e1117;
+    /* Pulse Animation */
+    @keyframes pulse {
+        0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(51, 217, 178, 0.7); }
+        70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(51, 217, 178, 0); }
+        100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(51, 217, 178, 0); }
+    }
+    .online-indicator {
+        display: inline-block;
+        width: 12px;
+        height: 12px;
+        background-color: #33d9b2;
+        border-radius: 50%;
+        margin-right: 8px;
+        animation: pulse 2s infinite;
     }
     
-    /* Gradient Sidebar */
+    /* Overall Theme */
+    .stApp { background-color: #0e1117; color: white; }
+    
+    /* Sidebar */
     [data-testid="stSidebar"] {
-        background-image: linear-gradient(#1e1e2f, #0e1117);
-        border-right: 1px solid #3d3d5c;
+        background-color: #161b22;
+        border-right: 1px solid #30363d;
     }
 
-    /* Professional Gradient Title */
+    /* Gradient Title */
     .main-title {
-        font-size: 45px !important;
+        font-size: 50px !important;
         font-weight: 800 !important;
         background: -webkit-linear-gradient(#00c6ff, #0072ff);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
-        padding-top: 0px;
+        margin-bottom: 0px;
     }
     
-    /* Better Chat Input */
-    .stChatInput {
-        border-radius: 20px !important;
-    }/* Glow effect for AI messages */
+    /* Assistant Messages Styling */
     [data-testid="stChatMessageAssistant"] {
-        border: 1px solid #00c6ff;
-        box-shadow: 0px 0px 15px rgba(0, 198, 255, 0.2);
+        border-left: 4px solid #00c6ff;
+        background-color: #1c2128 !important;
+        border-radius: 10px;
     }
     </style>
     """, unsafe_allow_html=True)
 
+# Main Header
 st.markdown('<p class="main-title">🚀 VISON AI</p>', unsafe_allow_html=True)
 st.markdown("##### *The Future of STEM Learning*")
 st.markdown("---")
-# --- CUSTOM DESIGN END ---
 
-# Sidebar Settings
+# Sidebar
 with st.sidebar:
-    st.header("Settings")
+    st.markdown('<center><h1 style="font-size: 80px; margin-bottom:0;">🤖</h1></center>', unsafe_allow_html=True)
+    st.markdown("<center><h3 style='margin-top:0;'>VISON CORE</h3></center>", unsafe_allow_html=True)
+    
+    # Pulse Status
+    st.markdown("""
+        <div style="background: rgba(51, 217, 178, 0.1); padding: 10px; border-radius: 10px; border: 1px solid rgba(51, 217, 178, 0.3); text-align: center; margin-bottom: 20px;">
+            <span class="online-indicator"></span>
+            <span style="color: #33d9b2; font-weight: bold; font-family: monospace;">SYSTEM ONLINE</span>
+        </div>
+    """, unsafe_allow_html=True)
+    
     lang = st.selectbox("Language / Bahasa", ["English", "Bahasa Melayu", "Japanese"])
     persona = st.selectbox("Tutor Persona", ["Friendly Mentor", "Quirky Scientist", "Strict Professor"])
-    st.info("Vison is currently in 'Live Mode' for BIVIC 2026.")
     
     if st.button("🗑️ Clear Long-Term Memory"):
         clear_memory()
@@ -120,9 +127,9 @@ with st.sidebar:
     
     st.markdown("---")
     st.header("👁️ Vison Vision")
-    uploaded_file = st.file_uploader("Upload a Math/Science Problem", type=['png', 'jpg', 'jpeg'])
+    uploaded_file = st.file_uploader("Upload Math/Science Problem", type=['png', 'jpg', 'jpeg'])
 
-# 4. CHAT HISTORY
+# 4. CHAT HISTORY (Load from DB)
 if "messages" not in st.session_state or not st.session_state.messages:
     st.session_state.messages = load_memory()
 
@@ -131,19 +138,19 @@ for message in st.session_state.messages:
         if isinstance(message["content"], str):
             st.markdown(message["content"])
         else:
+            # Re-displaying image indicator for history
             st.markdown(message["content"][0]["text"])
 
-# 5. MAIN APP LOGIC
-user_input = st.chat_input("Ask a STEM question or tell Vison to look at the image...")
+# 5. CHAT LOGIC
+user_input = st.chat_input("How can I help you with STEM today?")
 
 if user_input:
-    # Show user message on screen
     with st.chat_message("user"):
         st.write(user_input)
         if uploaded_file:
-            st.image(uploaded_file, caption="Uploaded Image", width=250)
-    
-    # Save user message to memory
+            st.image(uploaded_file, width=300)
+
+    # Save logic
     if uploaded_file:
         base64_image = base64.b64encode(uploaded_file.getvalue()).decode('utf-8')
         user_msg_content = [
@@ -151,45 +158,37 @@ if user_input:
             {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
         ]
         st.session_state.messages.append({"role": "user", "content": user_msg_content})
-        save_message("user", user_input + " [Image Uploaded]") 
+        save_message("user", user_input + " [Image Uploaded]")
     else:
         st.session_state.messages.append({"role": "user", "content": user_input})
         save_message("user", user_input)
-    
-    # AI Response
+
+    # Assistant Response
     with st.chat_message("assistant"):
-        if client is None:
-            st.error("Vison's brain is disconnected.")
-        else:
-            with st.spinner("Vison is analyzing..."):
+        if client:
+            with st.spinner("Vison is processing..."):
                 try:
-                    system_prompt = f"You are a {persona} tutoring in {lang}. Focus on STEM. If the user uploads an image, analyze it carefully."
+                    system_prompt = f"You are a {persona} tutoring in {lang}. Focus on STEM. Be helpful and concise."
                     api_messages = [{"role": "system", "content": system_prompt}]
                     
+                    # Add history to API call
                     for msg in st.session_state.messages:
                         api_messages.append({"role": msg["role"], "content": msg["content"]})
-                        
+                    
+                    # Pick Model
                     if uploaded_file:
-                        active_model = "meta-llama/llama-4-scout-17b-16e-instruct" 
+                        active_model = "meta-llama/llama-4-scout-17b-16e-instruct"
                     else:
                         active_model = "llama-3.1-8b-instant"
 
-                    response = client.chat.completions.create(
-                        model=active_model, 
-                        messages=api_messages
-                    )
-                    
+                    response = client.chat.completions.create(model=active_model, messages=api_messages)
                     answer = response.choices[0].message.content
                     st.markdown(answer)
                     
                     st.session_state.messages.append({"role": "assistant", "content": answer})
                     save_message("assistant", answer)
-                    
                 except Exception as e:
-                    st.error(f"API ERROR: {e}")
-        
-                    
-
+                    st.error(f"Error: {e}")
 
 
 
