@@ -61,42 +61,25 @@ st.markdown("""
         100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(51, 217, 178, 0); }
     }
     .online-indicator {
-        display: inline-block;
-        width: 12px;
-        height: 12px;
-        background-color: #33d9b2;
-        border-radius: 50%;
-        margin-right: 8px;
-        animation: pulse 2s infinite;
+        display: inline-block; width: 12px; height: 12px;
+        background-color: #33d9b2; border-radius: 50%;
+        margin-right: 8px; animation: pulse 2s infinite;
     }
     .stApp { background-color: #0e1117; }
     h1, h2, h3, h4, h5, p, span, div, label, li { color: #ffffff !important; }
-    [data-testid="stSidebar"] {
-        background-color: #161b22;
-        border-right: 1px solid #30363d;
-    }
+    [data-testid="stSidebar"] { background-color: #161b22; border-right: 1px solid #30363d; }
     .main-title {
-        font-size: 50px !important;
-        font-weight: 800 !important;
+        font-size: 50px !important; font-weight: 800 !important;
         background: -webkit-linear-gradient(#00c6ff, #0072ff);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        margin-bottom: 0px;
+        -webkit-background-clip: text; -webkit-text-fill-color: transparent;
     }
     [data-testid="stChatMessageAssistant"] {
-        border-left: 4px solid #00c6ff;
-        background-color: #1c2128 !important;
-        border-radius: 10px;
+        border-left: 4px solid #00c6ff; background-color: #1c2128 !important; border-radius: 10px;
     }
     .stSelectbox div[data-baseweb="select"] > div {
-        color: white !important;
-        background-color: #0e1117 !important;
+        color: white !important; background-color: #0e1117 !important;
     }
-    .robot-container {
-        fill: #000000;
-        filter: drop-shadow(0 0 8px rgba(0, 198, 255, 0.8));
-        margin: 20px 0;
-    }
+    .robot-container { fill: #000000; filter: drop-shadow(0 0 8px rgba(0, 198, 255, 0.8)); margin: 20px 0; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -116,8 +99,6 @@ with st.sidebar:
         st.rerun()
     
     st.markdown("---")
-    
-    # BLACK ROBOT ICON SVG
     st.markdown("""
         <center>
         <svg class="robot-container" width="100" height="100" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -138,36 +119,32 @@ with st.sidebar:
     st.header("🔍 Image Scanner")
     uploaded_file = st.file_uploader("Upload Math/Science Problem", type=['png', 'jpg', 'jpeg'])
     st.markdown("<br><center><p style='color:#8b949e !important;'>BIVIC 2026 PROJECT</p></center>", unsafe_allow_html=True)
-    st.markdown("<center><p style='color:#00c6ff !important; font-weight:bold;'>ST-Vison v2.9.1</p></center>", unsafe_allow_html=True)
+    st.markdown("<center><p style='color:#00c6ff !important; font-weight:bold;'>ST-Vison v2.9.2</p></center>", unsafe_allow_html=True)
 
 # CHAT HISTORY
 if "messages" not in st.session_state or not st.session_state.messages:
-    db_messages = load_memory()
-    if not db_messages:
-        welcome_text = "Hello! I am Vison, your AI STEM Tutor. How can I help you today?"
-        st.session_state.messages = [{"role": "assistant", "content": welcome_text}]
-        save_message("assistant", welcome_text)
+    db_msgs = load_memory()
+    if not db_msgs:
+        welcome = "Hello! I am Vison, your AI STEM Tutor. How can I help you today?"
+        st.session_state.messages = [{"role": "assistant", "content": welcome}]
+        save_message("assistant", welcome)
     else:
-        st.session_state.messages = db_messages
+        st.session_state.messages = db_msgs
 
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"] if isinstance(message["content"], str) else message["content"][0]["text"])
+for msg in st.session_state.messages:
+    with st.chat_message(msg["role"]):
+        st.markdown(msg["content"] if isinstance(msg["content"], str) else msg["content"][0]["text"])
 
 # CHAT LOGIC
 user_input = st.chat_input("Ask Vison a STEM question...")
 if user_input:
     with st.chat_message("user"):
         st.write(user_input)
-        if uploaded_file:
-            st.image(uploaded_file, width=300)
+        if uploaded_file: st.image(uploaded_file, width=300)
 
     if uploaded_file:
-        img_data = base64.b64encode(uploaded_file.getvalue()).decode('utf-8')
-        user_content = [
-            {"type": "text", "text": user_input},
-            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_data}"}}
-        ]
+        img_b64 = base64.b64encode(uploaded_file.getvalue()).decode('utf-8')
+        user_content = [{"type": "text", "text": user_input}, {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}}]
         st.session_state.messages.append({"role": "user", "content": user_content})
         save_message("user", f"{user_input} [Image Uploaded]")
     else:
@@ -178,13 +155,20 @@ if user_input:
         if client:
             with st.spinner("Vison is thinking..."):
                 try:
-                    sys_prompt = f"You are a {persona} in {lang}. Focus on STEM."
-                    api_msgs = [{"role": "system", "content": sys_prompt}]
-                    for m in st.session_state.messages:
-                        api_msgs.append({"role": m["role"], "content": m["content"]})
+                    sys_p = f"You are a {persona} in {lang}. Focus on STEM."
+                    api_msgs = [{"role": "system", "content": sys_p}]
                     
-                    model_choice = "meta-llama/llama-4-scout-17b-16e-instruct" if uploaded_file else "llama-3.1-8b-instant"
-                    res = client.chat.completions.create(model=model_choice, messages=api_msgs)
+                    # FIX: Sanitize messages for API (Convert everything back to string if not sending a new image)
+                    for m in st.session_state.messages:
+                        clean_content = m["content"]
+                        if isinstance(clean_content, list) and not uploaded_file:
+                            clean_content = clean_content[0]["text"] # Strip the image for non-vision models
+                        api_msgs.append({"role": m["role"], "content": clean_content})
+                    
+                    # Choose model based on CURRENT upload
+                    model_id = "llama-3.2-11b-vision-preview" if uploaded_file else "llama-3.1-8b-instant"
+                    
+                    res = client.chat.completions.create(model=model_id, messages=api_msgs)
                     ans = res.choices[0].message.content
                     st.markdown(ans)
                     st.session_state.messages.append({"role": "assistant", "content": ans})
@@ -192,6 +176,7 @@ if user_input:
                 except Exception as e:
                     st.error(f"Error: {e}")
         
+
 
 
 
