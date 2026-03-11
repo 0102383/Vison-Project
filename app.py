@@ -116,11 +116,83 @@ with st.sidebar:
         st.rerun()
     
     st.markdown("---")
+    
+    # BLACK ROBOT ICON SVG
     st.markdown("""
         <center>
         <svg class="robot-container" width="100" height="100" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-            <path d="M
+            <path d="M12,2A2,2 0 0,1 14,4C14,4.74 13.6,5.39 13,5.73V7H14A3,3 0 0,1 17,10V11H18A2,2 0 0,1 20,13V18A2,2 0 0,1 18,20H6A2,2 0 0,1 4,18V13A2,2 0 0,1 6,11H7V10A3,3 0 0,1 10,7H11V5.73C10.4,5.39 10,4.74 10,4A2,2 0 0,1 12,2M7.5,13A1.5,1.5 0 0,0 6,14.5A1.5,1.5 0 0,0 7.5,16A1.5,1.5 0 0,0 9,14.5A1.5,1.5 0 0,0 7.5,13M16.5,13A1.5,1.5 0 0,0 15,14.5A1.5,1.5 0 0,0 16.5,16A1.5,1.5 0 0,0 18,14.5A1.5,1.5 0 0,0 16.5,13M12,14L10.75,17H13.25L12,14Z"/>
+        </svg>
+        <h3 style='margin-top:0;'>VISON CORE</h3>
+        </center>
+    """, unsafe_allow_html=True)
+    
+    st.markdown("""
+        <div style="background: rgba(51, 217, 178, 0.1); padding: 10px; border-radius: 10px; border: 1px solid rgba(51, 217, 178, 0.3); text-align: center; margin-bottom: 20px;">
+            <span class="online-indicator"></span>
+            <span style="color: #33d9b2; font-weight: bold; font-family: monospace;">SYSTEM ONLINE</span>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    st.markdown("---")
+    st.header("🔍 Image Scanner")
+    uploaded_file = st.file_uploader("Upload Math/Science Problem", type=['png', 'jpg', 'jpeg'])
+    st.markdown("<br><center><p style='color:#8b949e !important;'>BIVIC 2026 PROJECT</p></center>", unsafe_allow_html=True)
+    st.markdown("<center><p style='color:#00c6ff !important; font-weight:bold;'>ST-Vison v2.9.1</p></center>", unsafe_allow_html=True)
+
+# CHAT HISTORY
+if "messages" not in st.session_state or not st.session_state.messages:
+    db_messages = load_memory()
+    if not db_messages:
+        welcome_text = "Hello! I am Vison, your AI STEM Tutor. How can I help you today?"
+        st.session_state.messages = [{"role": "assistant", "content": welcome_text}]
+        save_message("assistant", welcome_text)
+    else:
+        st.session_state.messages = db_messages
+
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"] if isinstance(message["content"], str) else message["content"][0]["text"])
+
+# CHAT LOGIC
+user_input = st.chat_input("Ask Vison a STEM question...")
+if user_input:
+    with st.chat_message("user"):
+        st.write(user_input)
+        if uploaded_file:
+            st.image(uploaded_file, width=300)
+
+    if uploaded_file:
+        img_data = base64.b64encode(uploaded_file.getvalue()).decode('utf-8')
+        user_content = [
+            {"type": "text", "text": user_input},
+            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_data}"}}
+        ]
+        st.session_state.messages.append({"role": "user", "content": user_content})
+        save_message("user", f"{user_input} [Image Uploaded]")
+    else:
+        st.session_state.messages.append({"role": "user", "content": user_input})
+        save_message("user", user_input)
+
+    with st.chat_message("assistant"):
+        if client:
+            with st.spinner("Vison is thinking..."):
+                try:
+                    sys_prompt = f"You are a {persona} in {lang}. Focus on STEM."
+                    api_msgs = [{"role": "system", "content": sys_prompt}]
+                    for m in st.session_state.messages:
+                        api_msgs.append({"role": m["role"], "content": m["content"]})
+                    
+                    model_choice = "meta-llama/llama-4-scout-17b-16e-instruct" if uploaded_file else "llama-3.1-8b-instant"
+                    res = client.chat.completions.create(model=model_choice, messages=api_msgs)
+                    ans = res.choices[0].message.content
+                    st.markdown(ans)
+                    st.session_state.messages.append({"role": "assistant", "content": ans})
+                    save_message("assistant", ans)
+                except Exception as e:
+                    st.error(f"Error: {e}")
         
+
 
 
 
