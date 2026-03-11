@@ -102,8 +102,10 @@ if user_input:
         base64_image = base64.b64encode(uploaded_file.getvalue()).decode('utf-8')
         user_msg_content = [
             {"type": "text", "text": user_input},
-            {"type": "image_
+            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
+        ]
                     
+
 
 
 
