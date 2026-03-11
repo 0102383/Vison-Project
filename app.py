@@ -1,13 +1,21 @@
-
 import streamlit as st
-from groq import Groq
 import sqlite3
 
-# 1. SETUP & SECRETS
+# Safely check for the Groq library
 try:
-    client = Groq(api_key=st.secrets["GROQ_API_KEY"])
+    from groq import Groq
+except ImportError:
+    st.error("Groq library missing! Check requirements.txt")
+
+# 1. SETUP & SECRETS (Armored Version)
+client = None
+try:
+    if "GROQ_API_KEY" in st.secrets:
+        client = Groq(api_key=st.secrets["GROQ_API_KEY"])
+    else:
+        st.warning("⚠️ The GROQ_API_KEY is missing from the Settings -> Secrets menu!")
 except Exception as e:
-    st.error("Please add GROQ_API_KEY to your Streamlit Secrets!")
+    st.error(f"Key Error: Make sure your key is typed correctly in Secrets. Details: {e}")
 
 # 2. DATABASE (Self-Revive Logic)
 def init_db():
@@ -50,29 +58,35 @@ if user_input:
     
     # AI Response
     with st.chat_message("assistant"):
-        with st.spinner("Vison is thinking incredibly fast..."):
-            try:
-                # Setup the Persona
-                system_prompt = f"You are a {persona} tutoring in {lang}. Focus on STEM."
-                api_messages = [{"role": "system", "content": system_prompt}]
-                
-                # Add history so it remembers the conversation
-                for msg in st.session_state.messages:
-                    api_messages.append({"role": msg["role"], "content": msg["content"]})
+        if client is None:
+            st.error("Vison's brain is disconnected. Please check the API key warning at the top of the page.")
+        else:
+            with st.spinner("Vison is thinking incredibly fast..."):
+                try:
+                    # Setup the Persona
+                    system_prompt = f"You are a {persona} tutoring in {lang}. Focus on STEM."
+                    api_messages = [{"role": "system", "content": system_prompt}]
                     
-                # Call the ultra-fast Groq model
-                response = client.chat.completions.create(
-                    model="llama3-8b-8192", 
-                    messages=api_messages
-                )
-                
-                answer = response.choices[0].message.content
-                st.markdown(answer)
-                
-                # Save the AI's answer
-                st.session_state.messages.append({"role": "assistant", "content": answer})
-            
-except Exception as e:
-                st.error(f"SYSTEM ERROR: {e}")
+                    # Add history so it remembers the conversation
+                    for msg in st.session_state.messages:
+                        api_messages.append({"role": msg["role"], "content": msg["content"]})
+                        
+                    # Call the ultra-fast Groq model
+                    response = client.chat.completions.create(
+                        model="llama3-8b-8192", 
+                        messages=api_messages
+                    )
+                    
+                    answer = response.choices[0].message.content
+                    st.markdown(answer)
+                    
+                    # Save the AI's answer
+                    st.session_state.messages.append({"role": "assistant", "content": answer})
+                except Exception as e:
+                    # THIS WILL CATCH THE EXACT ERROR
+                    st.error(f"GROQ ERROR: {e}")
+                    
+
+
 
 
