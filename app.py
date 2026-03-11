@@ -73,7 +73,7 @@ if user_input:
                         
                     # Call the ultra-fast Groq model
                     response = client.chat.completions.create(
-                        model="llama3-8b-8192", 
+                    model="llama-3.1-8b-instant",
                         messages=api_messages
                     )
                     
@@ -86,6 +86,7 @@ if user_input:
                     # THIS WILL CATCH THE EXACT ERROR
                     st.error(f"GROQ ERROR: {e}")
                     
+
 
 
 
