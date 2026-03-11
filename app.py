@@ -55,7 +55,7 @@ st.set_page_config(page_title="VISON AI", page_icon="🚀", layout="wide")
 
 st.markdown("""
     <style>
-    /* Pulse Animation */
+    /* Pulse Animation for System Online */
     @keyframes pulse {
         0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(51, 217, 178, 0.7); }
         70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(51, 217, 178, 0); }
@@ -71,15 +71,9 @@ st.markdown("""
         animation: pulse 2s infinite;
     }
     
-    /* Force Dark Theme & White Text */
-    .stApp { 
-        background-color: #0e1117; 
-    }
-    
-    /* Global White Text Override */
-    h1, h2, h3, h4, h5, p, span, div, label, li {
-        color: #ffffff !important;
-    }
+    /* Dark Theme & Global White Text */
+    .stApp { background-color: #0e1117; }
+    h1, h2, h3, h4, h5, p, span, div, label, li { color: #ffffff !important; }
     
     /* Sidebar Styling */
     [data-testid="stSidebar"] {
@@ -87,7 +81,7 @@ st.markdown("""
         border-right: 1px solid #30363d;
     }
 
-    /* Gradient Title */
+    /* Professional Gradient Title */
     .main-title {
         font-size: 50px !important;
         font-weight: 800 !important;
@@ -97,15 +91,14 @@ st.markdown("""
         margin-bottom: 0px;
     }
     
-    /* Assistant Messages Styling */
+    /* AI Message Bubble Styling */
     [data-testid="stChatMessageAssistant"] {
         border-left: 4px solid #00c6ff;
         background-color: #1c2128 !important;
         border-radius: 10px;
-        color: white !important;
     }
-    
-    /* Fix Selectbox text color */
+
+    /* Fix Dropdown/Input visibility */
     .stSelectbox div[data-baseweb="select"] > div {
         color: white !important;
         background-color: #0e1117 !important;
@@ -113,24 +106,15 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# Main Header
+# Main Screen Header
 st.markdown('<p class="main-title">🚀 VISON AI</p>', unsafe_allow_html=True)
 st.markdown("##### *The Future of STEM Learning*")
 st.markdown("---")
 
-# Sidebar
+# --- SIDEBAR START ---
 with st.sidebar:
-    st.markdown('<center><h1 style="font-size: 80px; margin-bottom:0;">🤖</h1></center>', unsafe_allow_html=True)
-    st.markdown("<center><h3 style='margin-top:0; color:white;'>VISON CORE</h3></center>", unsafe_allow_html=True)
-    
-    # Pulse Status
-    st.markdown("""
-        <div style="background: rgba(51, 217, 178, 0.1); padding: 10px; border-radius: 10px; border: 1px solid rgba(51, 217, 178, 0.3); text-align: center; margin-bottom: 20px;">
-            <span class="online-indicator"></span>
-            <span style="color: #33d9b2; font-weight: bold; font-family: monospace;">SYSTEM ONLINE</span>
-        </div>
-    """, unsafe_allow_html=True)
-    
+    # 1. SETTINGS AT THE TOP
+    st.markdown("### ⚙️ System Settings")
     lang = st.selectbox("Language / Bahasa", ["English", "Bahasa Melayu", "Japanese"])
     persona = st.selectbox("Tutor Persona", ["Friendly Mentor", "Quirky Scientist", "Strict Professor"])
     
@@ -140,12 +124,39 @@ with st.sidebar:
         st.rerun()
     
     st.markdown("---")
+
+    # 2. BRANDING & STATUS
+    st.markdown('<center><h1 style="font-size: 80px; margin-bottom:0;">🤖</h1></center>', unsafe_allow_html=True)
+    st.markdown("<center><h3 style='margin-top:0;'>VISON CORE</h3></center>", unsafe_allow_html=True)
+    
+    st.markdown("""
+        <div style="background: rgba(51, 217, 178, 0.1); padding: 10px; border-radius: 10px; border: 1px solid rgba(51, 217, 178, 0.3); text-align: center; margin-bottom: 20px;">
+            <span class="online-indicator"></span>
+            <span style="color: #33d9b2; font-weight: bold; font-family: monospace;">SYSTEM ONLINE</span>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    st.markdown("---")
+    
+    # 3. SCANNER AT THE BOTTOM
     st.header("🔍 Image Scanner")
     uploaded_file = st.file_uploader("Upload Math/Science Problem", type=['png', 'jpg', 'jpeg'])
 
-# 4. CHAT HISTORY (Load from DB)
+    # Footer Credits
+    st.markdown("<br><br>", unsafe_allow_html=True)
+    st.markdown("<center><p style='color:#8b949e !important;'>BIVIC 2026 PROJECT</p></center>", unsafe_allow_html=True)
+    st.markdown("<center><p style='color:#00c6ff !important; font-weight:bold;'>ST-Vison v2.7</p></center>", unsafe_allow_html=True)
+# --- SIDEBAR END ---
+
+# 4. CHAT HISTORY (Memory Management)
 if "messages" not in st.session_state or not st.session_state.messages:
-    st.session_state.messages = load_memory()
+    db_messages = load_memory()
+    if not db_messages:
+        welcome_text = "Hello! I am Vison, your AI STEM Tutor. How can I help you explore science or math today?"
+        st.session_state.messages = [{"role": "assistant", "content": welcome_text}]
+        save_message("assistant", welcome_text)
+    else:
+        st.session_state.messages = db_messages
 
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
@@ -155,7 +166,7 @@ for message in st.session_state.messages:
             st.markdown(message["content"][0]["text"])
 
 # 5. CHAT LOGIC
-user_input = st.chat_input("How can I help you with STEM today?")
+user_input = st.chat_input("Ask Vison a STEM question...")
 
 if user_input:
     with st.chat_message("user"):
@@ -171,7 +182,7 @@ if user_input:
             {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
         ]
         st.session_state.messages.append({"role": "user", "content": user_msg_content})
-        save_message("user", user_input + " [Image Uploaded]")
+        save_message("user", f"{user_input} [Image Uploaded]")
     else:
         st.session_state.messages.append({"role": "user", "content": user_input})
         save_message("user", user_input)
@@ -179,18 +190,15 @@ if user_input:
     # Assistant Response
     with st.chat_message("assistant"):
         if client:
-            with st.spinner("Vison is processing..."):
+            with st.spinner("Vison is thinking..."):
                 try:
-                    system_prompt = f"You are a {persona} tutoring in {lang}. Focus on STEM. Be helpful and concise."
+                    system_prompt = f"You are a {persona} tutoring in {lang}. Focus on STEM. Use clear formatting."
                     api_messages = [{"role": "system", "content": system_prompt}]
                     
                     for msg in st.session_state.messages:
                         api_messages.append({"role": msg["role"], "content": msg["content"]})
                     
-                    if uploaded_file:
-                        active_model = "meta-llama/llama-4-scout-17b-16e-instruct"
-                    else:
-                        active_model = "llama-3.1-8b-instant"
+                    active_model = "meta-llama/llama-4-scout-17b-16e-instruct" if uploaded_file else "llama-3.1-8b-instant"
 
                     response = client.chat.completions.create(model=active_model, messages=api_messages)
                     answer = response.choices[0].message.content
