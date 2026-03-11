@@ -55,7 +55,6 @@ st.set_page_config(page_title="VISON AI", page_icon="🚀", layout="wide")
 
 st.markdown("""
     <style>
-    /* Pulse Animation for System Online */
     @keyframes pulse {
         0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(51, 217, 178, 0.7); }
         70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(51, 217, 178, 0); }
@@ -70,18 +69,12 @@ st.markdown("""
         margin-right: 8px;
         animation: pulse 2s infinite;
     }
-    
-    /* Dark Theme & Global White Text */
     .stApp { background-color: #0e1117; }
     h1, h2, h3, h4, h5, p, span, div, label, li { color: #ffffff !important; }
-    
-    /* Sidebar Styling */
     [data-testid="stSidebar"] {
         background-color: #161b22;
         border-right: 1px solid #30363d;
     }
-
-    /* Professional Gradient Title */
     .main-title {
         font-size: 50px !important;
         font-weight: 800 !important;
@@ -90,21 +83,15 @@ st.markdown("""
         -webkit-text-fill-color: transparent;
         margin-bottom: 0px;
     }
-    
-    /* AI Message Bubble Styling */
     [data-testid="stChatMessageAssistant"] {
         border-left: 4px solid #00c6ff;
         background-color: #1c2128 !important;
         border-radius: 10px;
     }
-
-    /* Fix Dropdown/Input visibility */
     .stSelectbox div[data-baseweb="select"] > div {
         color: white !important;
         background-color: #0e1117 !important;
     }
-
-    /* SVG Black Robot Styling with Glow */
     .robot-container {
         fill: #000000;
         filter: drop-shadow(0 0 8px rgba(0, 198, 255, 0.8));
@@ -113,14 +100,12 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# Main Screen Header
 st.markdown('<p class="main-title">🚀 VISON AI</p>', unsafe_allow_html=True)
 st.markdown("##### *The Future of STEM Learning*")
 st.markdown("---")
 
-# --- SIDEBAR START ---
+# SIDEBAR
 with st.sidebar:
-    # 1. SETTINGS AT THE TOP
     st.markdown("### ⚙️ System Settings")
     lang = st.selectbox("Language / Bahasa", ["English", "Bahasa Melayu", "Japanese"])
     persona = st.selectbox("Tutor Persona", ["Friendly Mentor", "Quirky Scientist", "Strict Professor"])
@@ -131,43 +116,11 @@ with st.sidebar:
         st.rerun()
     
     st.markdown("---")
-
-    # 2. BRANDING & STATUS (SVG Black Icon)
     st.markdown("""
         <center>
         <svg class="robot-container" width="100" height="100" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-            <path d="M12,2A2,2 0 0,1 14,4C14,4.74 13.6,5.39 13,5.73V7H14A3,3 0 0,1 17,10V11H18A2,2 0 0,1 20,13V18A2,2 0 0,1 18,20H6A2,2 0 0,1 4,18V13A2,2 0 0,1 6,11H7V10A3,3 0 0,1 10,7H11V5.73C10.4,5.39 10,4.74 10,4A2,2 0 0,1 12,2M7.5,13A1.5,1.5 0 0,0 6,14.5A1.5,1.5 0 0,0 7.5,16A1.5,1.5 0 0,0 9,14.5A1.5,1.5 0 0,0 7.5,13M16.5,13A1.5,1.5 0 0,0 15,14.5A1.5,1.5 0 0,0 16.5,16A1.5,1.5 0 0,0 18,14.5A1.5,1.5 0 0,0 16.5,13M12,14L10.75,17H13.25L12,14Z"/>
-        </svg>
-        <h3 style='margin-top:0;'>VISON CORE</h3>
-        </center>
-    """, unsafe_allow_html=True)
-    
-    st.markdown("""
-        <div style="background: rgba(51, 217, 178, 0.1); padding: 10px; border-radius: 10px; border: 1px solid rgba(51, 217, 178, 0.3); text-align: center; margin-bottom: 20px;">
-            <span class="online-indicator"></span>
-            <span style="color: #33d9b2; font-weight: bold; font-family: monospace;">SYSTEM ONLINE</span>
-        </div>
-    """, unsafe_allow_html=True)
-    
-    st.markdown("---")
-    
-    # 3. SCANNER AT THE BOTTOM
-    st.header("🔍 Image Scanner")
-    uploaded_file = st.file_uploader("Upload Math/Science Problem", type=['png', 'jpg', 'jpeg'])
-
-    # Footer Credits
-    st.markdown("<br><br>", unsafe_allow_html=True)
-    st.markdown("<center><p style='color:#8b949e !important;'>BIVIC 2026 PROJECT</p></center>", unsafe_allow_html=True)
-    st.markdown("<center><p style='color:#00c6ff !important; font-weight:bold;'>ST-Vison v2.8</p></center>", unsafe_allow_html=True)
-# --- SIDEBAR END ---
-
-# 4. CHAT HISTORY
-if "messages" not in st.session_state or not st.session_state.messages:
-    db_messages = load_memory()
-    if not db_messages:
-        welcome_text = "Hello! I am Vison
-
-
+            <path d="M
+        
 
 
 
