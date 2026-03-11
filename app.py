@@ -89,7 +89,7 @@ if user_input:
                             ]
                         }
                         api_messages.append(user_msg)
-                        active_model = "llama-3.2-11b-vision-preview" # Groq's Vision Brain
+                        active_model = "meta-llama/llama-4-scout-17b-16e-instruct" # Groq's Vision Brain
                         
                     # NORMAL TEXT MODE: No image uploaded
                     else:
@@ -112,6 +112,7 @@ if user_input:
                 except Exception as e:
                     st.error(f"VISION ERROR: {e}")
                     
+
 
 
 
