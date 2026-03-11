@@ -1,15 +1,13 @@
 
 import streamlit as st
-import google.generativeai as genai
+from groq import Groq
 import sqlite3
 
-# 1. SETUP & SECRETS (OpenAI REMOVED!)
-# We are now using the free Google Gemini AI
+# 1. SETUP & SECRETS
 try:
-    genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 except Exception as e:
-    st.error("Please add GOOGLE_API_KEY to your Streamlit Secrets!")
+    st.error("Please add GROQ_API_KEY to your Streamlit Secrets!")
 
 # 2. DATABASE (Self-Revive Logic)
 def init_db():
@@ -45,28 +43,34 @@ for message in st.session_state.messages:
 user_input = st.chat_input("Ask a STEM question...")
 
 if user_input:
-    # Show user message
+    # Save and show user message
     st.session_state.messages.append({"role": "user", "content": user_input})
     with st.chat_message("user"):
         st.write(user_input)
     
     # AI Response
     with st.chat_message("assistant"):
-        with st.spinner("Vison is thinking..."):
+        with st.spinner("Vison is thinking incredibly fast..."):
             try:
-                # The New "Free Brain" logic
-                prompt = f"You are a {persona} tutoring in {lang}. Focus on STEM. The user says: {user_input}"
-                response = model.generate_content(prompt)
-                answer = response.text
+                # Setup the Persona
+                system_prompt = f"You are a {persona} tutoring in {lang}. Focus on STEM."
+                api_messages = [{"role": "system", "content": system_prompt}]
                 
+                # Add history so it remembers the conversation
+                for msg in st.session_state.messages:
+                    api_messages.append({"role": msg["role"], "content": msg["content"]})
+                    
+                # Call the ultra-fast Groq model
+                response = client.chat.completions.create(
+                    model="llama3-8b-8192", 
+                    messages=api_messages
+                )
+                
+                answer = response.choices[0].message.content
                 st.markdown(answer)
+                
+                # Save the AI's answer
                 st.session_state.messages.append({"role": "assistant", "content": answer})
             except Exception as e:
-                st.error("Error connecting to the AI. Did you add the Google API Key?")
+                st.error("Error connecting to the AI. Did you add the Groq API Key?")
 
-# 6. IMAGE UPLOADER (Computer Vision)
-st.sidebar.markdown("---")
-uploaded_file = st.sidebar.file_uploader("Upload a Math/Science Problem", type=['png', 'jpg', 'jpeg'])
-if uploaded_file:
-    st.sidebar.success("Image received! (Integration Active)")
-    
