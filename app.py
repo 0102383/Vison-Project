@@ -16,7 +16,7 @@ try:
     else:
         st.warning("⚠️ The GROQ_API_KEY is missing from the Settings -> Secrets menu!")
 except Exception as e:
-    st.error(f"Key Error: Make sure your key is typed correctly. Details: {e}")
+    st.error(f"Key Error: Details: {e}")
 
 # 2. DATABASE (LONG-TERM MEMORY)
 def init_db():
@@ -71,10 +71,17 @@ st.markdown("""
         animation: pulse 2s infinite;
     }
     
-    /* Overall Theme */
-    .stApp { background-color: #0e1117; color: white; }
+    /* Force Dark Theme & White Text */
+    .stApp { 
+        background-color: #0e1117; 
+    }
     
-    /* Sidebar */
+    /* Global White Text Override */
+    h1, h2, h3, h4, h5, p, span, div, label, li {
+        color: #ffffff !important;
+    }
+    
+    /* Sidebar Styling */
     [data-testid="stSidebar"] {
         background-color: #161b22;
         border-right: 1px solid #30363d;
@@ -95,6 +102,13 @@ st.markdown("""
         border-left: 4px solid #00c6ff;
         background-color: #1c2128 !important;
         border-radius: 10px;
+        color: white !important;
+    }
+    
+    /* Fix Selectbox text color */
+    .stSelectbox div[data-baseweb="select"] > div {
+        color: white !important;
+        background-color: #0e1117 !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -107,7 +121,7 @@ st.markdown("---")
 # Sidebar
 with st.sidebar:
     st.markdown('<center><h1 style="font-size: 80px; margin-bottom:0;">🤖</h1></center>', unsafe_allow_html=True)
-    st.markdown("<center><h3 style='margin-top:0;'>VISON CORE</h3></center>", unsafe_allow_html=True)
+    st.markdown("<center><h3 style='margin-top:0; color:white;'>VISON CORE</h3></center>", unsafe_allow_html=True)
     
     # Pulse Status
     st.markdown("""
@@ -138,7 +152,6 @@ for message in st.session_state.messages:
         if isinstance(message["content"], str):
             st.markdown(message["content"])
         else:
-            # Re-displaying image indicator for history
             st.markdown(message["content"][0]["text"])
 
 # 5. CHAT LOGIC
@@ -171,11 +184,9 @@ if user_input:
                     system_prompt = f"You are a {persona} tutoring in {lang}. Focus on STEM. Be helpful and concise."
                     api_messages = [{"role": "system", "content": system_prompt}]
                     
-                    # Add history to API call
                     for msg in st.session_state.messages:
                         api_messages.append({"role": msg["role"], "content": msg["content"]})
                     
-                    # Pick Model
                     if uploaded_file:
                         active_model = "meta-llama/llama-4-scout-17b-16e-instruct"
                     else:
@@ -189,8 +200,6 @@ if user_input:
                     save_message("assistant", answer)
                 except Exception as e:
                     st.error(f"Error: {e}")
-
-
 
 
 
