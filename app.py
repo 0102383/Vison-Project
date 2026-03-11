@@ -53,7 +53,44 @@ init_db()
 # 3. UI LAYOUT
 st.set_page_config(page_title="VISON AI", page_icon="🚀")
 st.title("🚀 VISON: AI STEM Tutor")
+# 3. UI LAYOUT
+st.set_page_config(page_title="VISON AI", page_icon="🚀")
+
+# --- CUSTOM DESIGN START ---
+st.markdown("""
+    <style>
+    /* Dark mode background */
+    .stApp {
+        background-color: #0e1117;
+    }
+    
+    /* Gradient Sidebar */
+    [data-testid="stSidebar"] {
+        background-image: linear-gradient(#1e1e2f, #0e1117);
+        border-right: 1px solid #3d3d5c;
+    }
+
+    /* Professional Gradient Title */
+    .main-title {
+        font-size: 45px !important;
+        font-weight: 800 !important;
+        background: -webkit-linear-gradient(#00c6ff, #0072ff);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        padding-top: 0px;
+    }
+    
+    /* Better Chat Input */
+    .stChatInput {
+        border-radius: 20px !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+st.markdown('<p class="main-title">🚀 VISON AI</p>', unsafe_allow_html=True)
+st.markdown("##### *The Future of STEM Learning*")
 st.markdown("---")
+# --- CUSTOM DESIGN END ---
 
 # Sidebar Settings
 with st.sidebar:
@@ -138,6 +175,7 @@ if user_input:
                     st.error(f"API ERROR: {e}")
         
                     
+
 
 
 
