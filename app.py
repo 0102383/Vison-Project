@@ -104,12 +104,11 @@ st.markdown("""
         background-color: #0e1117 !important;
     }
 
-    /* Solid Black Icon Styling with Glow */
-    .black-icon {
-        color: #000000 !important;
-        font-size: 100px;
-        margin-bottom: 0px;
-        filter: drop-shadow(0 0 10px rgba(0, 198, 255, 0.6));
+    /* SVG Black Robot Styling with Glow */
+    .robot-container {
+        fill: #000000;
+        filter: drop-shadow(0 0 8px rgba(0, 198, 255, 0.8));
+        margin: 20px 0;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -133,9 +132,15 @@ with st.sidebar:
     
     st.markdown("---")
 
-    # 2. BRANDING & STATUS (Black Icon Here)
-    st.markdown('<center><h1 class="black-icon">🤖</h1></center>', unsafe_allow_html=True)
-    st.markdown("<center><h3 style='margin-top:0;'>VISON CORE</h3></center>", unsafe_allow_html=True)
+    # 2. BRANDING & STATUS (SVG Black Icon)
+    st.markdown("""
+        <center>
+        <svg class="robot-container" width="100" height="100" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12,2A2,2 0 0,1 14,4C14,4.74 13.6,5.39 13,5.73V7H14A3,3 0 0,1 17,10V11H18A2,2 0 0,1 20,13V18A2,2 0 0,1 18,20H6A2,2 0 0,1 4,18V13A2,2 0 0,1 6,11H7V10A3,3 0 0,1 10,7H11V5.73C10.4,5.39 10,4.74 10,4A2,2 0 0,1 12,2M7.5,13A1.5,1.5 0 0,0 6,14.5A1.5,1.5 0 0,0 7.5,16A1.5,1.5 0 0,0 9,14.5A1.5,1.5 0 0,0 7.5,13M16.5,13A1.5,1.5 0 0,0 15,14.5A1.5,1.5 0 0,0 16.5,16A1.5,1.5 0 0,0 18,14.5A1.5,1.5 0 0,0 16.5,13M12,14L10.75,17H13.25L12,14Z"/>
+        </svg>
+        <h3 style='margin-top:0;'>VISON CORE</h3>
+        </center>
+    """, unsafe_allow_html=True)
     
     st.markdown("""
         <div style="background: rgba(51, 217, 178, 0.1); padding: 10px; border-radius: 10px; border: 1px solid rgba(51, 217, 178, 0.3); text-align: center; margin-bottom: 20px;">
@@ -153,71 +158,14 @@ with st.sidebar:
     # Footer Credits
     st.markdown("<br><br>", unsafe_allow_html=True)
     st.markdown("<center><p style='color:#8b949e !important;'>BIVIC 2026 PROJECT</p></center>", unsafe_allow_html=True)
-    st.markdown("<center><p style='color:#00c6ff !important; font-weight:bold;'>ST-Vison v2.7</p></center>", unsafe_allow_html=True)
+    st.markdown("<center><p style='color:#00c6ff !important; font-weight:bold;'>ST-Vison v2.8</p></center>", unsafe_allow_html=True)
 # --- SIDEBAR END ---
 
-# 4. CHAT HISTORY (Memory Management)
+# 4. CHAT HISTORY
 if "messages" not in st.session_state or not st.session_state.messages:
     db_messages = load_memory()
     if not db_messages:
-        welcome_text = "Hello! I am Vison, your AI STEM Tutor. How can I help you explore science or math today?"
-        st.session_state.messages = [{"role": "assistant", "content": welcome_text}]
-        save_message("assistant", welcome_text)
-    else:
-        st.session_state.messages = db_messages
-
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        if isinstance(message["content"], str):
-            st.markdown(message["content"])
-        else:
-            st.markdown(message["content"][0]["text"])
-
-# 5. CHAT LOGIC
-user_input = st.chat_input("Ask Vison a STEM question...")
-
-if user_input:
-    with st.chat_message("user"):
-        st.write(user_input)
-        if uploaded_file:
-            st.image(uploaded_file, width=300)
-
-    # Save logic
-    if uploaded_file:
-        base64_image = base64.b64encode(uploaded_file.getvalue()).decode('utf-8')
-        user_msg_content = [
-            {"type": "text", "text": user_input},
-            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
-        ]
-        st.session_state.messages.append({"role": "user", "content": user_msg_content})
-        save_message("user", f"{user_input} [Image Uploaded]")
-    else:
-        st.session_state.messages.append({"role": "user", "content": user_input})
-        save_message("user", user_input)
-
-    # Assistant Response
-    with st.chat_message("assistant"):
-        if client:
-            with st.spinner("Vison is thinking..."):
-                try:
-                    system_prompt = f"You are a {persona} tutoring in {lang}. Focus on STEM. Use clear formatting."
-                    api_messages = [{"role": "system", "content": system_prompt}]
-                    
-                    for msg in st.session_state.messages:
-                        api_messages.append({"role": msg["role"], "content": msg["content"]})
-                    
-                    active_model = "meta-llama/llama-4-scout-17b-16e-instruct" if uploaded_file else "llama-3.1-8b-instant"
-
-                    response = client.chat.completions.create(model=active_model, messages=api_messages)
-                    answer = response.choices[0].message.content
-                    st.markdown(answer)
-                    
-                    st.session_state.messages.append({"role": "assistant", "content": answer})
-                    save_message("assistant", answer)
-                except Exception as e:
-                    st.error(f"Error: {e}")
-
-
+        welcome_text = "Hello! I am Vison
 
 
 
