@@ -52,7 +52,6 @@ init_db()
 
 # 3. UI LAYOUT
 st.set_page_config(page_title="VISON AI", page_icon="🚀")
-st.title("🚀 VISON: AI STEM Tutor")
 # 3. UI LAYOUT
 st.set_page_config(page_title="VISON AI", page_icon="🚀")
 
@@ -83,6 +82,10 @@ st.markdown("""
     /* Better Chat Input */
     .stChatInput {
         border-radius: 20px !important;
+    }/* Glow effect for AI messages */
+    [data-testid="stChatMessageAssistant"] {
+        border: 1px solid #00c6ff;
+        box-shadow: 0px 0px 15px rgba(0, 198, 255, 0.2);
     }
     </style>
     """, unsafe_allow_html=True)
@@ -175,6 +178,7 @@ if user_input:
                     st.error(f"API ERROR: {e}")
         
                     
+
 
 
 
