@@ -103,6 +103,14 @@ st.markdown("""
         color: white !important;
         background-color: #0e1117 !important;
     }
+
+    /* Solid Black Icon Styling with Glow */
+    .black-icon {
+        color: #000000 !important;
+        font-size: 100px;
+        margin-bottom: 0px;
+        filter: drop-shadow(0 0 10px rgba(0, 198, 255, 0.6));
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -125,8 +133,8 @@ with st.sidebar:
     
     st.markdown("---")
 
-    # 2. BRANDING & STATUS
-    st.markdown('<center><h1 style="font-size: 80px; margin-bottom:0;">🤖</h1></center>', unsafe_allow_html=True)
+    # 2. BRANDING & STATUS (Black Icon Here)
+    st.markdown('<center><h1 class="black-icon">🤖</h1></center>', unsafe_allow_html=True)
     st.markdown("<center><h3 style='margin-top:0;'>VISON CORE</h3></center>", unsafe_allow_html=True)
     
     st.markdown("""
@@ -208,7 +216,6 @@ if user_input:
                     save_message("assistant", answer)
                 except Exception as e:
                     st.error(f"Error: {e}")
-
 
 
 
