@@ -56,7 +56,18 @@ st.set_page_config(page_title="VISON AI", page_icon="🚀")
 st.set_page_config(page_title="VISON AI", page_icon="🚀")
 
 # --- CUSTOM DESIGN START ---
-st.markdown("""
+st.markdown("""/* Glow effect for AI responses */
+    [data-testid="stChatMessageAssistant"] {
+        border-left: 5px solid #00c6ff !important;
+        background-color: #161b22 !important;
+        box-shadow: 0px 4px 10px rgba(0, 198, 255, 0.1);
+    }
+
+    /* Style for User messages */
+    [data-testid="stChatMessageUser"] {
+        border-left: 5px solid #8b949e !important;
+        background-color: #0d1117 !important;
+    }
     <style>
     /* Dark mode background */
     .stApp {
@@ -178,6 +189,7 @@ if user_input:
                     st.error(f"API ERROR: {e}")
         
                     
+
 
 
 
