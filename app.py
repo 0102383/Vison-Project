@@ -126,7 +126,7 @@ with st.sidebar:
         st.rerun()
     
     st.markdown("---")
-    st.header("👁️ Vison Vision")
+    st.header("🔍 Image Scanner")
     uploaded_file = st.file_uploader("Upload Math/Science Problem", type=['png', 'jpg', 'jpeg'])
 
 # 4. CHAT HISTORY (Load from DB)
@@ -189,6 +189,7 @@ if user_input:
                     save_message("assistant", answer)
                 except Exception as e:
                     st.error(f"Error: {e}")
+
 
 
 
