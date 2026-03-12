@@ -8,8 +8,8 @@ import streamlit.components.v1 as components
 from fpdf import FPDF
 
 # --- ⚙️ MASTER SETTINGS ⚙️ ---
-LOGO_FILENAME = "vison_logo.jpg" 
-AI_AVATAR_FILENAME = "ai_logo_glow.jpg"
+LOGO_FILENAME = "vison_logo.jpg.png" 
+AI_AVATAR_FILENAME = "image_3b899c.jpg"
 
 # --- 1. SAFE LIBRARY IMPORT ---
 client = None
@@ -170,4 +170,218 @@ if time.time() - st.session_state.last_learn_time > 3600:
     if client and "messages" in st.session_state and len(st.session_state.messages) > 2:
         try:
             recent_texts = [m["content"] for m in st.session_state.messages if m["role"] == "user"][-5:]
-            prompt = f"Based on
+            joined_texts = ' | '.join(recent_texts)
+            
+            # Broken into two lines to prevent string cutoffs!
+            prompt = "Based on these messages, what is this student studying? "
+            prompt += f"Return ONLY 3-4 comma-separated keywords: {joined_texts}"
+            
+            res = client.chat.completions.create(model="llama-3.1-8b-instant", messages=[{"role": "user", "content": prompt}])
+            inferred_interests = res.choices[0].message.content.replace('"', '').strip()
+            
+            old_prof = get_profile(st.session_state.username)
+            save_profile(st.session_state.username, inferred_interests, old_prof["level"])
+            st.toast("🧠 VISON automatically learned from your last hour of study!")
+        except: 
+            pass
+    st.session_state.last_learn_time = time.time()
+
+# --- 6. SIDEBAR ---
+with st.sidebar:
+    st.markdown(f"### 👤 {st.session_state.username}")
+    
+    st.subheader("📁 Chat History")
+    if st.button("➕ New Chat"):
+        st.session_state.current_session = str(uuid.uuid4())
+        st.session_state.messages = []
+        st.session_state.quiz_mode = False
+        st.rerun()
+        
+    reversed_sessions = db_sessions[::-1]
+    selected_session = st.selectbox(
+        "Jump to past chat:", 
+        reversed_sessions, 
+        format_func=format_session_name,
+        index=reversed_sessions.index(st.session_state.current_session)
+    )
+    
+    if selected_session != st.session_state.current_session:
+        st.session_state.current_session = selected_session
+        st.session_state.messages = load_memory(st.session_state.username, selected_session)
+        st.session_state.quiz_mode = False
+        st.rerun()
+        
+    with st.expander("✏️ Rename Current Chat"):
+        current_display_name = format_session_name(st.session_state.current_session)
+        new_name_input = st.text_input("New Name", value=current_display_name, label_visibility="collapsed")
+        if st.button("💾 Save Name", use_container_width=True):
+            conn = sqlite3.connect('vison_user_data.db')
+            conn.cursor().execute('INSERT OR REPLACE INTO chat_sessions (session_id, username, session_name) VALUES (?, ?, ?)', (st.session_state.current_session, st.session_state.username, new_name_input))
+            conn.commit()
+            conn.close()
+            st.success("Renamed!")
+            time.sleep(0.5)
+            st.rerun()
+            
+    st.markdown("---")
+    
+    st.subheader("📝 Quick Quiz")
+    with st.expander("Setup & Start Quiz"):
+        quiz_country = st.text_input("Country", value="Malaysia") 
+        quiz_school = st.text_input("School Name (Optional)", placeholder="e.g., SMK...")
+        quiz_grade = st.selectbox("Grade / Form", ["Form 1", "Form 2", "Form 3", "Form 4", "Form 5", "Primary School", "College / University"])
+        
+        st.markdown("---")
+        
+        quiz_subject = st.text_input("Subject", value="Math & STEM")
+        quiz_difficulty = st.selectbox("Difficulty", ["Easy", "Medium", "Hard", "Expert"])
+        quiz_questions = st.number_input("Number of Questions", min_value=1, max_value=20, value=3)
+        quiz_timer = st.number_input("Seconds per Question", min_value=10, max_value=300, value=30, help="Forces you to think fast!")
+        
+        if st.button("🚀 Start Quiz!", use_container_width=True):
+            school_context = f" at {quiz_school}" if quiz_school else ""
+            
+            st.session_state.quiz_mode = True
+            st.session_state.quiz_time_limit = quiz_timer
+            
+            # String safely split across multiple lines
+            st.session_state.pending_prompt = (
+                f"I want to test my knowledge! I am a student in {quiz_country}{school_context}, "
+                f"currently in {quiz_grade}. Please generate a {quiz_difficulty} difficulty, "
+                f"{quiz_questions}-question multiple choice quiz on the subject of '{quiz_subject}'. "
+                f"Ask me the questions ONE by ONE. Wait for me to answer each question before "
+                f"revealing if I am correct and moving to the next one. "
+                f"IMPORTANT: I have exactly {quiz_timer} seconds to answer each question. "
+                f"Let me know if I am too slow!"
+            )
+            st.rerun()
+    
+    if st.session_state.get("quiz_mode"):
+        if st.button("🛑 Stop Quiz Mode", use_container_width=True):
+            st.session_state.quiz_mode = False
+            st.success("Quiz mode deactivated!")
+            time.sleep(1)
+            st.rerun()
+            
+    st.markdown("---")
+    st.subheader("⏱️ Focus Timer")
+    minutes = st.number_input("Set Minutes", min_value=1, max_value=60, value=25)
+    if st.button("Start Session"):
+        ph = st.empty()
+        for i in range(minutes * 60, 0, -1):
+            mins, secs = divmod(i, 60)
+            ph.metric("Time Left", f"{mins:02d}:{secs:02d}")
+            time.sleep(1)
+        st.balloons()
+        st.success("Session Complete! Take a break.")
+    
+    st.markdown("---")
+    math_mode = st.toggle("📐 Math Mode", value=True)
+    
+    profile = get_profile(st.session_state.username)
+    new_ints = st.text_area("🧠 Interests", value=profile["interests"])
+    levels = ["Primary School", "High School", "University"]
+    new_level = st.selectbox("🎓 Level", levels, index=levels.index(profile["level"]) if profile["level"] in levels else 1)
+    
+    if st.button("Update Memory"):
+        save_profile(st.session_state.username, new_ints, new_level)
+        st.success("Learned! 🚀")
+    
+    persona = st.selectbox("Persona", ["Friendly Mentor", "Quirky Scientist", "Strict Professor", "Casual Chat Buddy"])
+    lang = st.selectbox("Language", ["English", "Bahasa Melayu", "Japanese"])
+
+    if st.button("📄 Download PDF"):
+        pdf_bytes = create_pdf(load_memory(st.session_state.username, st.session_state.current_session))
+        st.download_button("📥 Save Notes", pdf_bytes, "vison_notes.pdf", mime="application/pdf")
+
+# --- 7. MAIN CHAT INTERFACE ---
+st.markdown('<p class="main-title">🚀 VISON AI CORE</p>', unsafe_allow_html=True)
+
+if "messages" not in st.session_state: 
+    st.session_state.messages = load_memory(st.session_state.username, st.session_state.current_session)
+
+for msg in st.session_state.messages:
+    if msg["role"] == "assistant":
+        display_avatar = f"data:image/jpeg;base64,{ai_avatar_b64}" if ai_avatar_b64 else "🤖"
+    else:
+        display_avatar = "👤"
+        
+    with st.chat_message(msg["role"], avatar=display_avatar):
+        st.markdown(msg["content"])
+
+st.markdown("---")
+
+uploaded_file = st.file_uploader("➕ Add Image / Equation", type=['png', 'jpg', 'jpeg'], key="vison_uploader_main")
+
+user_input = st.chat_input("Ask Vison anything...")
+
+if st.session_state.get("pending_prompt"):
+    user_input = st.session_state.pending_prompt
+    st.session_state.pending_prompt = None
+
+if user_input:
+    time_note_for_ai = ""
+    display_time = None
+    
+    if st.session_state.get("quiz_mode") and "last_ai_time" in st.session_state:
+        elapsed_time = int(time.time() - st.session_state.last_ai_time)
+        limit = st.session_state.get("quiz_time_limit", 30)
+        display_time = f"⏱️ Time taken: {elapsed_time}s / {limit}s"
+        
+        if elapsed_time > limit:
+            time_note_for_ai = f"\n\n[System Alert to AI: The student took {elapsed_time} seconds. The limit was {limit} seconds. They FAILED the time limit! Tell them!]"
+        else:
+            time_note_for_ai = f"\n\n[System Alert to AI: The student answered in {elapsed_time} seconds. Fast enough!]"
+
+    st.session_state.messages.append({"role": "user", "content": user_input})
+    save_message(st.session_state.username, "user", user_input, st.session_state.current_session)
+    
+    with st.chat_message("user", avatar="👤"): 
+        st.markdown(user_input)
+        if display_time:
+            st.caption(display_time)
+
+    with st.chat_message("assistant", avatar=f"data:image/jpeg;base64,{ai_avatar_b64}" if ai_avatar_b64 else "🤖"):
+        if client:
+            try:
+                model_id = "llama-3.2-11b-vision-preview" if uploaded_file else "llama-3.3-70b-versatile"
+                math_text = "IMPORTANT: Use LaTeX (enclosed in $$) for all math." if math_mode else ""
+                sys_m = f"You are {persona} in {lang}. Level: {new_level}. Interests: {new_ints}. {math_text}"
+                
+                messages_for_ai = st.session_state.messages.copy()
+                if time_note_for_ai:
+                    messages_for_ai[-1] = {"role": "user", "content": user_input + time_note_for_ai}
+                
+                res = client.chat.completions.create(
+                    model=model_id, 
+                    messages=[{"role": "system", "content": sys_m}] + messages_for_ai
+                )
+                ans = res.choices[0].message.content
+                st.markdown(ans)
+                
+                tokens = res.usage.total_tokens
+                st.caption(f"⚙️ **Model:** {model_id} | 🧠 **Tokens:** {tokens}")
+                
+                st.session_state.last_ai_time = time.time()
+                
+                st.session_state.messages.append({"role": "assistant", "content": ans})
+                save_message(st.session_state.username, "assistant", ans, st.session_state.current_session)
+            
+            except Exception as e:
+                st.error(f"Error: {e}")
+
+# --- 8. AUTO-SCROLL TO BOTTOM JAVASCRIPT ---
+components.html(
+    """
+    <script>
+        function scrollToBottom() {
+            var chatElements = window.parent.document.querySelectorAll('.stChatMessage');
+            if (chatElements.length > 0) {
+                chatElements[chatElements.length - 1].scrollIntoView({ behavior: 'smooth' });
+            }
+        }
+        setTimeout(scrollToBottom, 300);
+    </script>
+    """,
+    height=0,
+)
