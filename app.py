@@ -77,7 +77,7 @@ def get_image_base64(image_path):
             return base64.b64encode(img_file.read()).decode('utf-8')
     return None
 
-# --- 5. UI & CSS (ANIMATIONS ONLY) ---
+# --- 5. UI & CSS (ANIMATIONS & GLOW EFFECTS) ---
 st.set_page_config(page_title="VISON AI", page_icon="🚀", layout="wide")
 
 st.markdown("""
@@ -96,6 +96,16 @@ st.markdown("""
     .online-indicator { display: inline-block; width: 12px; height: 12px; background-color: #a252ff; border-radius: 50%; margin-right: 8px; animation: pulse 2s infinite; }
     .main-title { font-size: 50px !important; font-weight: 800 !important; background: -webkit-linear-gradient(#a252ff, #0072ff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-align: center; margin-top: -15px; }
     .login-box { background-color: #1c2128; padding: 40px; border-radius: 20px; border: 2px solid #a252ff; text-align: center; margin-top: 10px; }
+    
+    /* 🔥 CHAT INPUT BOX FIX 🔥 */
+    [data-testid="stChatInput"] {
+        border: 2px solid #a252ff !important;
+        border-radius: 10px !important;
+        background-color: #0e1117 !important;
+    }
+    [data-testid="stChatInput"]:focus-within {
+        box-shadow: 0 0 15px rgba(162, 82, 255, 0.5) !important;
+    }
     </style>
     """, unsafe_allow_html=True)
 
