@@ -213,3 +213,4 @@ with st.sidebar:
     if st.button("🚪 Logout", use_container_width=True):
         st.session_state.clear() # Clears session data safely
         st.rerun()
+
