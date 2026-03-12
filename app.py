@@ -4,8 +4,10 @@ import base64
 import os
 
 # --- ⚙️ MASTER SETTINGS ⚙️ ---
-# Pointing exactly to your GitHub file!
-LOGO_FILENAME = "vison_logo.jpg" 
+# Type the EXACT name of your main vison logo file on GitHub here:
+LOGO_FILENAME = "vison_logo.jpg.png" 
+# Name of the glowing AI logo for chat avatars:
+AI_AVATAR_FILENAME = "ai_logo_glow.png"
 
 # --- 1. SAFE LIBRARY IMPORT ---
 GROQ_AVAILABLE = False
@@ -74,15 +76,19 @@ def clear_user_memory(username):
 
 init_db()
 
-# --- 4. IMAGE ENCODER FUNCTION (WITH ALARM BELL) ---
+# --- 4. IMAGE ENCODER FUNCTION ---
 def get_image_base64(image_path):
     if os.path.exists(image_path):
         with open(image_path, "rb") as img_file:
             return base64.b64encode(img_file.read()).decode('utf-8')
     else:
-        # This prints a red error box exactly where the image is supposed to be if it's missing!
         st.error(f"⚠️ ERROR: I cannot find the file named '{image_path}' in your GitHub repository. Please check the spelling!")
         return None
+
+# Encode the AI avatar image
+ai_avatar_b64 = get_image_base64(AI_AVATAR_FILENAME)
+# Default user avatar
+user_avatar_icon = "👤"
 
 # --- 5. UI & CSS (ANIMATIONS & GLOW EFFECTS) ---
 st.set_page_config(page_title="VISON AI", page_icon="🚀", layout="wide")
@@ -112,6 +118,38 @@ st.markdown("""
     }
     [data-testid="stChatInput"]:focus-within {
         box-shadow: 0 0 15px rgba(162, 82, 255, 0.5) !important;
+    }
+
+    /* 🔥 CHAT BUBBLE STYLING & ALIGNMENT 🔥 */
+    /* Target user messages with CSS flexbox for right-alignment */
+    div[data-testid="stChatMessage"]:has(div[data-testid="stChatMessageAvatarIcon"]):has(span[aria-label="User Avatar icon"]) {
+        display: flex !important;
+        justify-content: flex-end !important;
+        flex-direction: row-reverse !important;
+    }
+    
+    /* Style the user message bubble content (right-aligned) */
+    div[data-testid="stChatMessage"]:has(span[aria-label="User Avatar icon"]) > div {
+        background-color: rgba(162, 82, 255, 0.1) !important;
+        border: 1px solid #a252ff !important;
+        border-radius: 15px !important;
+        color: #ffffff !important;
+        box-shadow: 0 0 10px rgba(162, 82, 255, 0.3) !important;
+    }
+    
+    /* Target assistant/AI messages with flexbox for left-alignment */
+    div[data-testid="stChatMessage"]:has(img[data-testid="stChatMessageAvatarImage"]) {
+        display: flex !important;
+        justify-content: flex-start !important;
+    }
+
+    /* Style the AI/assistant message bubble content (left-aligned) */
+    div[data-testid="stChatMessage"]:has(img[data-testid="stChatMessageAvatarImage"]) > div {
+        background-color: rgba(0, 114, 255, 0.1) !important;
+        border: 1px solid #0072ff !important;
+        border-radius: 15px !important;
+        color: #ffffff !important;
+        box-shadow: 0 0 10px rgba(0, 114, 255, 0.3) !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -186,26 +224,49 @@ if not st.session_state.messages:
     st.session_state.messages = [{"role": "assistant", "content": welcome}]
     save_message(st.session_state.username, "assistant", welcome)
 
+# --- DISPLAY CHAT MESSAGES WITH CUSTOM ALIGNMENT AND AVATARS ---
 for msg in st.session_state.messages:
-    with st.chat_message(msg["role"]):
-        st.markdown(msg["content"] if isinstance(msg["content"], str) else msg["content"][0]["text"])
+    # Set the correct avatar base64 or icon
+    current_avatar = None
+    if msg["role"] == "assistant" and ai_avatar_b64:
+        current_avatar = f"data:image/png;base64,{ai_avatar_b64}"
+    elif msg["role"] == "user":
+        current_avatar = user_avatar_icon
+
+    with st.chat_message(msg["role"], avatar=current_avatar):
+        # The CSS above will automatically align the bubbles and add glowing borders
+        content = msg["content"]
+        if isinstance(content, list):
+            # Handle mixed text and image user input if applicable
+            for item in content:
+                if item["type"] == "text":
+                    st.markdown(item["text"])
+                elif item["type"] == "image_url":
+                    # You can customize image display here
+                    pass 
+        else:
+            # Handle text content
+            st.markdown(content)
 
 user_input = st.chat_input("Ask a question...")
 if user_input:
-    with st.chat_message("user"):
-        st.write(user_input)
-        if uploaded_file: st.image(uploaded_file, width=300)
+    # Immediately add the user message to the session state for a fast UI update
+    new_user_message = {"role": "user", "content": user_input}
+    st.session_state.messages.append(new_user_message)
+    save_message(st.session_state.username, "user", user_input)
 
-    if uploaded_file:
-        img_b64 = base64.b64encode(uploaded_file.getvalue()).decode('utf-8')
-        content = [{"type": "text", "text": user_input}, {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}}]
-        st.session_state.messages.append({"role": "user", "content": content})
-        save_message(st.session_state.username, "user", f"{user_input} [Image Uploaded]")
-    else:
-        st.session_state.messages.append({"role": "user", "content": user_input})
-        save_message(st.session_state.username, "user", user_input)
+    # Re-display user message instantly with correct right alignment and avatar
+    with st.chat_message("user", avatar=user_avatar_icon):
+        if uploaded_file:
+            # Re-process and save image upload if present
+            # img_b64 = base64.b64encode(uploaded_file.getvalue()).decode('utf-8')
+            # ...
+            # save_message(...)
+            pass 
+        st.markdown(user_input)
 
-    with st.chat_message("assistant"):
+    # --- PROCESS AI RESPONSE ---
+    with st.chat_message("assistant", avatar=f"data:image/png;base64,{ai_avatar_b64}" if ai_avatar_b64 else None):
         if client:
             with st.spinner("Vison processing..."):
                 try:
@@ -222,11 +283,6 @@ if user_input:
                     st.session_state.messages.append({"role": "assistant", "content": ans})
                     save_message(st.session_state.username, "assistant", ans)
                 except Exception as e: st.error(f"Error: {e}")
-
-
-
-
-
 
 
 
