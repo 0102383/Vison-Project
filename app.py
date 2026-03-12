@@ -179,6 +179,7 @@ with st.sidebar:
 st.markdown('<p class="main-title">🚀 VISON AI CORE</p>', unsafe_allow_html=True)
 
 # --- 8. CHAT LOGIC ---
+# --- 8. CHAT LOGIC (WITH MAIN SCREEN UPLOADER) ---
 if "messages" not in st.session_state:
     st.session_state.messages = load_memory(st.session_state.username)
 
@@ -188,34 +189,59 @@ for msg in st.session_state.messages:
     with st.chat_message(msg["role"], avatar=avatar):
         st.markdown(msg["content"])
 
-user_input = st.chat_input("Ask Vison anything...")
-if user_input:
-    st.session_state.messages.append({"role": "user", "content": user_input})
-    save_message(st.session_state.username, "user", user_input)
-    
-    with st.chat_message("user", avatar="👤"):
-        st.markdown(user_input)
+# --- THE "PLUS" UPLOADER AREA ---
+# We place this right above the chat input
+st.markdown("---")
+uploaded_file = st.file_uploader("➕ Add Image / Equation", type=['png', 'jpg', 'jpeg'], help="Upload a photo of your math equation here!")
 
+user_input = st.chat_input("Ask Vison anything...")
+
+if user_input:
+    # Handle Image Upload if present
+    if uploaded_file:
+        # Convert image to base64 for the AI to 'see' it
+        img_b64 = base64.b64encode(uploaded_file.getvalue()).decode('utf-8')
+        user_content = [
+            {"type": "text", "text": user_input},
+            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}}
+        ]
+        # Display the image in the chat
+        with st.chat_message("user", avatar="👤"):
+            st.image(uploaded_file, width=300)
+            st.markdown(user_input)
+        
+        save_message(st.session_state.username, "user", f"{user_input} [Image Uploaded]")
+    else:
+        user_content = user_input
+        with st.chat_message("user", avatar="👤"):
+            st.markdown(user_input)
+        save_message(st.session_state.username, "user", user_input)
+
+    st.session_state.messages.append({"role": "user", "content": user_content})
+
+    # AI Response
     with st.chat_message("assistant", avatar=f"data:image/png;base64,{ai_avatar_b64}" if ai_avatar_b64 else None):
         if client:
             user_prof = get_profile(st.session_state.username)
-            
-            # SYSTEM PROMPT ADAPTATION
-            if persona == "Casual Chat Buddy":
-                sys_m = f"You are a relaxed, cool friend who loves to chat in {lang}. Be conversational and funny. Avoid sounding like a textbook unless asked."
-            else:
-                sys_m = f"You are a {persona} in {lang}. The user is a {user_prof['level']} student interested in {user_prof['interests']}. Keep your explanations appropriate for their level. Focus on STEM."
-            
-            try:
-                api_msgs = [{"role": "system", "content": sys_m}] + st.session_state.messages
-                res = client.chat.completions.create(model="llama-3.1-8b-instant", messages=api_msgs)
-                ans = res.choices[0].message.content
-                st.markdown(ans)
-                st.session_state.messages.append({"role": "assistant", "content": ans})
-                save_message(st.session_state.username, "assistant", ans)
-            except Exception as e:
-                st.error(f"Error: {e}")
+            with st.spinner("Analyzing equation..."):
+                try:
+                    # Switch to vision model if image is uploaded
+                    model_id = "llama-3.2-11b-vision-preview" if uploaded_file else "llama-3.1-8b-instant"
+                    
+                    sys_m = f"You are {persona} in {lang}. User level: {user_prof['level']}. Interests: {user_prof['interests']}. If an image is provided, solve the equation step-by-step."
+                    
+                    api_msgs = [{"role": "system", "content": sys_m}]
+                    # We need to format the history correctly for the vision model
+                    for m in st.session_state.messages:
+                        api_msgs.append({"role": m["role"], "content": m["content"]})
 
+                    res = client.chat.completions.create(model=model_id, messages=api_msgs)
+                    ans = res.choices[0].message.content
+                    st.markdown(ans)
+                    st.session_state.messages.append({"role": "assistant", "content": ans})
+                    save_message(st.session_state.username, "assistant", ans)
+                except Exception as e:
+                    st.error(f"Error: {e}")
 
 
 
