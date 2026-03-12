@@ -77,22 +77,17 @@ def get_image_base64(image_path):
             return base64.b64encode(img_file.read()).decode('utf-8')
     return None
 
-# --- 5. UI & CSS (SEAMLESS DARK MODE) ---
+# --- 5. UI & CSS (ANIMATIONS ONLY) ---
 st.set_page_config(page_title="VISON AI", page_icon="🚀", layout="wide")
 
 st.markdown("""
     <style>
-    .stApp, [data-testid="stAppViewContainer"], .main { background-color: #0e1117 !important; }
-    [data-testid="stHeader"] { background-color: #0e1117 !important; }
-    [data-testid="stBottomBlock"], [data-testid="stBottom"] > div { background-color: #0e1117 !important; }
-    [data-testid="stSidebar"] { background-color: #0e1117 !important; border-right: 1px solid #1c2128 !important; }
-    h1, h2, h3, h4, h5, p, span, div, label, li { color: #ffffff !important; }
-    [data-testid="stChatInput"] { background-color: #1c2128 !important; border: 1px solid #a252ff !important; border-radius: 15px; }
-    
+    /* Splash Screen Logo Animation */
     .hero-container { display: flex; justify-content: center; align-items: center; padding: 10px; animation: fadeInDown 1.5s ease-out; }
     .hero-image { max-width: 350px; border-radius: 20px; box-shadow: 0 0 25px rgba(138, 43, 226, 0.4); }
     @keyframes fadeInDown { 0% { opacity: 0; transform: translateY(-40px); } 100% { opacity: 1; transform: translateY(0); } }
     
+    /* General UI Effects */
     @keyframes pulse {
         0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(162, 82, 255, 0.7); }
         70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(162, 82, 255, 0); }
@@ -124,14 +119,12 @@ if not st.session_state.logged_in:
         
         if st.button("Unlock AI"):
             if user_id and user_pass:
-                # FIX: Auto-lowercase the username so case-sensitivity doesn't lose history
                 clean_user_id = user_id.lower().strip() 
                 status = manage_user(clean_user_id, user_pass)
                 
                 if status in ["registered", "authorized"]:
                     st.session_state.logged_in = True
                     st.session_state.username = clean_user_id
-                    # FIX: Force clear the screen memory to ensure we load the database fresh
                     if "messages" in st.session_state: 
                         del st.session_state.messages
                     st.rerun()
@@ -150,7 +143,6 @@ with st.sidebar:
     st.markdown(f"**👤 User:** `{st.session_state.username}`")
     if st.button("Logout"):
         st.session_state.logged_in = False
-        # FIX: Wipes the screen memory so the next user doesn't see your chat!
         if "messages" in st.session_state: 
             del st.session_state.messages
         st.rerun()
