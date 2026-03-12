@@ -10,6 +10,7 @@ from fpdf import FPDF
 # --- ⚙️ MASTER SETTINGS ⚙️ ---
 LOGO_FILENAME = "vison_logo.jpg" 
 AI_AVATAR_FILENAME = "ai_logo_glow.jpg"
+ADMIN_USERNAME = "0102383" # 👑 ONLY THIS USERNAME CAN SEE THE SECRET DATA!
 
 # --- 1. SAFE LIBRARY IMPORT ---
 client = None
@@ -28,20 +29,15 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS chat_log (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, role TEXT, content TEXT, session_id TEXT DEFAULT 'default')''')
     c.execute('''CREATE TABLE IF NOT EXISTS chat_sessions (session_id TEXT PRIMARY KEY, username TEXT, session_name TEXT)''')
     
-    try: 
-        c.execute("ALTER TABLE users ADD COLUMN interests TEXT")
-    except: 
-        pass
-    
-    try: 
-        c.execute("ALTER TABLE users ADD COLUMN level TEXT")
-    except: 
-        pass
-        
-    try: 
-        c.execute("ALTER TABLE chat_log ADD COLUMN session_id TEXT DEFAULT 'default'")
-    except: 
-        pass
+    # 🕵️‍♂️ Adding the new secret vault column
+    try: c.execute("ALTER TABLE users ADD COLUMN interests TEXT")
+    except: pass
+    try: c.execute("ALTER TABLE users ADD COLUMN level TEXT")
+    except: pass
+    try: c.execute("ALTER TABLE chat_log ADD COLUMN session_id TEXT DEFAULT 'default'")
+    except: pass
+    try: c.execute("ALTER TABLE users ADD COLUMN secret_profile TEXT DEFAULT 'No data yet.'")
+    except: pass
         
     conn.commit()
     conn.close()
@@ -69,11 +65,21 @@ def save_profile(u, i, l):
     conn.commit()
     conn.close()
 
+def save_secret_profile(u, secret_text):
+    conn = sqlite3.connect('vison_user_data.db')
+    conn.cursor().execute('UPDATE users SET secret_profile=? WHERE username=?', (secret_text, u))
+    conn.commit()
+    conn.close()
+
 def get_profile(u):
     conn = sqlite3.connect('vison_user_data.db')
-    res = conn.cursor().execute('SELECT interests, level FROM users WHERE username=?', (u,)).fetchone()
+    res = conn.cursor().execute('SELECT interests, level, secret_profile FROM users WHERE username=?', (u,)).fetchone()
     conn.close()
-    return {"interests": res[0] or "STEM", "level": res[1] or "High School"} if res else {"interests": "STEM", "level": "High School"}
+    if res:
+        # Handle cases where secret_profile might be missing in older rows
+        secret = res[2] if len(res) > 2 and res[2] else "No data yet."
+        return {"interests": res[0] or "STEM", "level": res[1] or "High School", "secret": secret}
+    return {"interests": "STEM", "level": "High School", "secret": "No data yet."}
 
 def save_message(u, r, c, s_id):
     conn = sqlite3.connect('vison_user_data.db')
@@ -103,6 +109,12 @@ def get_image_base64(image_path):
         with open(image_path, "rb") as img_file:
             return base64.b64encode(img_file.read()).decode('utf-8')
     return None
+
+def get_all_users_data():
+    conn = sqlite3.connect('vison_user_data.db')
+    data = conn.cursor().execute('SELECT username, interests, secret_profile FROM users').fetchall()
+    conn.close()
+    return data
 
 init_db()
 ai_avatar_b64 = get_image_base64(AI_AVATAR_FILENAME)
@@ -166,21 +178,31 @@ def format_session_name(s_id):
 if "last_learn_time" not in st.session_state:
     st.session_state.last_learn_time = time.time()
 
+# 🧠 THE EMOTIONAL AUTO-BRAIN
 if time.time() - st.session_state.last_learn_time > 3600:
     if client and "messages" in st.session_state and len(st.session_state.messages) > 2:
         try:
-            recent_texts = [m["content"] for m in st.session_state.messages if m["role"] == "user"][-5:]
+            recent_texts = [m["content"] for m in st.session_state.messages if m["role"] == "user"][-8:]
             joined_texts = ' | '.join(recent_texts)
             
-            # Broken into two lines to prevent string cutoffs!
-            prompt = "Based on these messages, what is this student studying? "
-            prompt += f"Return ONLY 3-4 comma-separated keywords: {joined_texts}"
+            # Step 1: Learn Study Topics
+            prompt_topics = f"Based on these messages, what is this student studying? Return ONLY 3-4 comma-separated keywords: {joined_texts}"
+            res_topics = client.chat.completions.create(model="llama-3.1-8b-instant", messages=[{"role": "user", "content": prompt_topics}])
+            inferred_interests = res_topics.choices[0].message.content.replace('"', '').strip()
             
-            res = client.chat.completions.create(model="llama-3.1-8b-instant", messages=[{"role": "user", "content": prompt}])
-            inferred_interests = res.choices[0].message.content.replace('"', '').strip()
+            # Step 2: Secretly Learn Emotional State
+            prompt_emotion = (
+                f"Read these messages from a student: {joined_texts}. "
+                f"Analyze their psychological state and learning style. Are they frustrated? Confident? "
+                f"Do they struggle with specific concepts? Write a short 2-sentence psychological profile."
+            )
+            res_emotion = client.chat.completions.create(model="llama-3.1-8b-instant", messages=[{"role": "user", "content": prompt_emotion}])
+            inferred_emotion = res_emotion.choices[0].message.content.strip()
             
             old_prof = get_profile(st.session_state.username)
             save_profile(st.session_state.username, inferred_interests, old_prof["level"])
+            save_secret_profile(st.session_state.username, inferred_emotion)
+            
             st.toast("🧠 VISON automatically learned from your last hour of study!")
         except: 
             pass
@@ -236,15 +258,12 @@ with st.sidebar:
         quiz_subject = st.text_input("Subject", value="Math & STEM")
         quiz_difficulty = st.selectbox("Difficulty", ["Easy", "Medium", "Hard", "Expert"])
         quiz_questions = st.number_input("Number of Questions", min_value=1, max_value=20, value=3)
-        quiz_timer = st.number_input("Seconds per Question", min_value=10, max_value=300, value=30, help="Forces you to think fast!")
+        quiz_timer = st.number_input("Seconds per Question", min_value=10, max_value=300, value=30)
         
         if st.button("🚀 Start Quiz!", use_container_width=True):
             school_context = f" at {quiz_school}" if quiz_school else ""
-            
             st.session_state.quiz_mode = True
             st.session_state.quiz_time_limit = quiz_timer
-            
-            # String safely split across multiple lines
             st.session_state.pending_prompt = (
                 f"I want to test my knowledge! I am a student in {quiz_country}{school_context}, "
                 f"currently in {quiz_grade}. Please generate a {quiz_difficulty} difficulty, "
@@ -273,7 +292,7 @@ with st.sidebar:
             ph.metric("Time Left", f"{mins:02d}:{secs:02d}")
             time.sleep(1)
         st.balloons()
-        st.success("Session Complete! Take a break.")
+        st.success("Session Complete!")
     
     st.markdown("---")
     math_mode = st.toggle("📐 Math Mode", value=True)
@@ -293,6 +312,19 @@ with st.sidebar:
     if st.button("📄 Download PDF"):
         pdf_bytes = create_pdf(load_memory(st.session_state.username, st.session_state.current_session))
         st.download_button("📥 Save Notes", pdf_bytes, "vison_notes.pdf", mime="application/pdf")
+
+    # 👑 THE SECRET ADMIN VAULT (ONLY VISIBLE TO ADMIN)
+    if st.session_state.username == ADMIN_USERNAME:
+        st.markdown("---")
+        st.error("🕵️‍♂️ SECRET ADMIN VAULT")
+        with st.expander("View Student Analytics"):
+            st.caption("This data is collected invisibly every hour.")
+            all_users = get_all_users_data()
+            for u_name, u_ints, u_secret in all_users:
+                st.markdown(f"**User:** `{u_name}`")
+                st.markdown(f"**Topics:** {u_ints}")
+                st.markdown(f"**Psycho-Profile:** *{u_secret}*")
+                st.divider()
 
 # --- 7. MAIN CHAT INTERFACE ---
 st.markdown('<p class="main-title">🚀 VISON AI CORE</p>', unsafe_allow_html=True)
@@ -346,7 +378,11 @@ if user_input:
             try:
                 model_id = "llama-3.2-11b-vision-preview" if uploaded_file else "llama-3.3-70b-versatile"
                 math_text = "IMPORTANT: Use LaTeX (enclosed in $$) for all math." if math_mode else ""
-                sys_m = f"You are {persona} in {lang}. Level: {new_level}. Interests: {new_ints}. {math_text}"
+                
+                # Fetch their secret profile so the AI knows how they are feeling right now!
+                secret_context = f"Student Profile Note: {profile['secret']}" if profile['secret'] != "No data yet." else ""
+                
+                sys_m = f"You are {persona} in {lang}. Level: {new_level}. Interests: {new_ints}. {secret_context} {math_text}"
                 
                 messages_for_ai = st.session_state.messages.copy()
                 if time_note_for_ai:
@@ -385,4 +421,5 @@ components.html(
     """,
     height=0,
 )
+
 
