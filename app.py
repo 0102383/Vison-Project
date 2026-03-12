@@ -9,7 +9,7 @@ from fpdf import FPDF
 
 # --- ⚙️ MASTER SETTINGS ⚙️ ---
 LOGO_FILENAME = "vison_logo.jpg" 
-AI_AVATAR_FILENAME = "ai_logo_glowjpg"
+AI_AVATAR_FILENAME = "ai_logo_glow.jpg"
 ADMIN_USERNAME = "0102383" # 👑 ONLY THIS USERNAME CAN SEE THE SECRET DATA!
 
 # --- 1. SAFE LIBRARY IMPORT ---
@@ -375,3 +375,4 @@ components.html(
     """,
     height=0,
 )
+
