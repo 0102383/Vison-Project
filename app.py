@@ -2,7 +2,6 @@ import streamlit as st
 import sqlite3
 import base64
 import os
-
 # --- ⚙️ MASTER SETTINGS ⚙️ ---
 # Type the EXACT name of your main vison logo file on GitHub here:
 LOGO_FILENAME = "vison_logo.jpg.png" 
@@ -283,6 +282,7 @@ if user_input:
                     st.session_state.messages.append({"role": "assistant", "content": ans})
                     save_message(st.session_state.username, "assistant", ans)
                 except Exception as e: st.error(f"Error: {e}")
+
 
 
 
