@@ -4,10 +4,17 @@ import streamlit.components.v1 as components
 from fpdf import FPDF
 from groq import Groq
 
-# --- PART 1: SETTINGS ---
-LOGO, AVATAR, ADMIN = "vison_logo.jpg", "ai_logo_glow.jpg", "0102383"
+# --- PART 1: SETTINGS & AVATAR LOADER ---
+LOGO_FILENAME = "vison_logo.jpg" 
+AI_AVATAR_FILENAME = "ai_logo_glow.jpg"
+ADMIN_USERNAME = "0102383"
 
-# --- PART 2: DATABASE ---
+def get_image_base64(path):
+    if os.path.exists(path):
+        with open(path, "rb") as f: return base64.b64encode(f.read()).decode()
+    return None
+
+# --- PART 2: DATABASE ENGINE ---
 def db_query(q, data=(), fetch=False):
     conn = sqlite3.connect('vison_user_data.db')
     c = conn.cursor(); c.execute(q, data)
@@ -25,40 +32,40 @@ def create_pdf(history):
     for m in history: pdf.multi_cell(0, 8, f"\n{'YOU' if m['role']=='user' else 'VISON'}: {m['content']}")
     return pdf.output(dest='S').encode('latin-1')
 
-# --- PART 4: BRAIN, EVOLUTION & POWER LOGIC ---
+# --- PART 4: BRAIN & EVOLUTION LOGIC ---
 def get_mem(u):
     past = db_query('SELECT content FROM chat_log WHERE username=? AND role="user" ORDER BY id DESC LIMIT 15', (u,), True)
     res = db_query('SELECT interests, level, secret_profile FROM users WHERE username=?', (u,), True)
     txt = " ".join([r[0] for r in past])
     return {"i": res[0][0], "l": res[0][1], "s": res[0][2], "c": txt[-600:]} if res else {"i":"STEM","l":"High School","s":"None","c":""}
 
-def analyze_student_stats(u):
+def analyze_stats(u):
     logs = db_query('SELECT role, content FROM chat_log WHERE username=? ORDER BY id DESC LIMIT 20', (u,), True)
-    if not logs: return "Not enough data.", 0
-    history_text = " ".join([f"{r}: {c}" for r, c in logs])
+    if not logs: return "Need more data.", 10
+    history = " ".join([f"{r}: {c}" for r, c in logs])
     try:
         client = Groq(api_key=st.secrets["GROQ_API_KEY"])
-        # 1. Emotional Evolution String
-        evo_res = client.chat.completions.create(model="llama-3.1-8b-instant", messages=[{"role": "user", "content": f"Summarize only the emotional feelings and mental blocks of this student for evolution: {history_text}"}])
-        # 2. Academic Power Level
-        pwr_res = client.chat.completions.create(model="llama-3.1-8b-instant", messages=[{"role": "user", "content": f"Based on the knowledge shown, give a Power Level from 0-100. Return ONLY the number: {history_text}"}])
-        power_val = int(''.join(filter(str.isdigit, pwr_res.choices[0].message.content)))
-        return evo_res.choices[0].message.content, power_val
-    except: return "Engine Offline", 10
+        evo = client.chat.completions.create(model="llama-3.1-8b-instant", messages=[{"role": "user", "content": f"Summarize ONLY the emotional feelings/mental blocks of this student for evolution: {history}"}])
+        pwr = client.chat.completions.create(model="llama-3.1-8b-instant", messages=[{"role": "user", "content": f"Give academic power level 0-100 (Number only): {history}"}])
+        p_val = int(''.join(filter(str.isdigit, pwr.choices[0].message.content)))
+        return evo.choices[0].message.content, p_val
+    except: return "Engine Offline", 15
 
 # --- PART 5: UI STYLE ---
 st.set_page_config(page_title="VISON AI", layout="wide")
 st.markdown("<style>.title { font-size:45px; font-weight:800; background:linear-gradient(45deg,#a252ff,#0072ff); -webkit-background-clip:text; -webkit-text-fill-color:transparent; text-align:center; }</style>", unsafe_allow_html=True)
 
-# --- PART 6: SIDEBAR & ADMIN VAULT ---
+# --- PART 6: SIDEBAR & LOGIN ---
 init_db()
 if 'logged_in' not in st.session_state: st.session_state.logged_in = False
 if not st.session_state.logged_in:
+    logo_b64 = get_image_base64(LOGO_FILENAME)
+    if logo_b64: st.markdown(f'<center><img src="data:image/jpeg;base64,{logo_b64}" width="200"></center>', unsafe_allow_html=True)
     st.markdown('<p class="title">VISON CORE</p>', unsafe_allow_html=True)
     u, p = st.text_input("User"), st.text_input("Pass", type="password")
     if st.button("Unlock"):
         res = db_query('SELECT password FROM users WHERE username=?', (u.lower(),), True)
-        if not res: db_query('INSERT INTO users VALUES (?,?,?,?,?)', (u.lower(), p, "STEM", "High School", "New Student"))
+        if not res: db_query('INSERT INTO users VALUES (?,?,?,?,?)', (u.lower(), p, "General", "High School", "New Student"))
         if not res or res[0][0] == p:
             st.session_state.logged_in, st.session_state.username = True, u.lower()
             st.session_state.sid = str(uuid.uuid4()); st.rerun()
@@ -68,41 +75,44 @@ with st.sidebar:
     st.title(f"🚀 {st.session_state.username.upper()}")
     if st.button("Logout"): st.session_state.clear(); st.rerun()
     st.divider(); mem = get_mem(st.session_state.username)
-    if st.button("➕ New Chat"): st.session_state.sid = str(uuid.uuid4()); st.session_state.messages = []; st.rerun()
     ni = st.text_area("Personality Notes", value=mem["i"])
     if st.button("Update Memory"): db_query('UPDATE users SET interests=? WHERE username=?', (ni, st.session_state.username)); st.success("Saved")
     
-    if st.session_state.username == ADMIN:
+    if st.session_state.username == ADMIN_USERNAME:
         with st.expander("🕵️ VISON VAULT (STATS)"):
-            if st.button("⚡ Sync Evolution & Power"):
-                evo, pwr = analyze_student_stats(st.session_state.username)
-                st.session_state.evo, st.session_state.pwr = evo, pwr
+            if st.button("⚡ Sync Stats"):
+                e, pw = analyze_stats(st.session_state.username)
+                st.session_state.evo, st.session_state.pwr = e, pw
             if "pwr" in st.session_state:
-                st.metric("Academic Power Level", f"{st.session_state.pwr}/100")
-                st.subheader("🧬 Evolution (Feelings)")
-                st.code(st.session_state.evo, language="text")
+                st.metric("Power Level", f"{st.session_state.pwr}/100")
+                st.subheader("🧬 Evolution String")
+                st.code(st.session_state.evo)
             st.divider()
             for un, ui, us in db_query('SELECT username, interests, secret_profile FROM users', fetch=True):
                 st.write(f"**{un}**: {ui}"); st.divider()
 
-    st.divider(); persona = st.selectbox("Persona", ["Friendly Mentor", "Strict Professor", "Quirky Scientist", "Casual Buddy"])
+    persona = st.selectbox("Persona", ["Friendly Mentor", "Strict Professor", "Quirky Scientist", "Casual Buddy"])
     if st.button("🗑️ Purge Memory"): db_query('DELETE FROM chat_log WHERE username=?', (st.session_state.username,)); st.rerun()
 
-# --- PART 7: CHAT ---
+# --- PART 7: CHAT INTERFACE ---
 st.markdown('<p class="title">🚀 VISON AI CORE</p>', unsafe_allow_html=True)
 if "messages" not in st.session_state: st.session_state.messages = []
-for m in st.session_state.messages: 
-    with st.chat_message(m["role"]): st.markdown(m["content"])
+ai_b64 = get_image_base64(AI_AVATAR_FILENAME)
+ai_av = f"data:image/jpeg;base64,{ai_b64}" if ai_b64 else "🤖"
 
-up, user_in = st.file_uploader("Image", type=['png','jpg','jpeg']), st.chat_input("Ask...")
+for m in st.session_state.messages: 
+    with st.chat_message(m["role"], avatar=ai_av if m["role"]=="assistant" else "👤"): 
+        st.markdown(m["content"])
+
+up, user_in = st.file_uploader("Image", type=['png','jpg','jpeg']), st.chat_input("Ask Vison...")
 if user_in:
     client = Groq(api_key=st.secrets["GROQ_API_KEY"])
     st.session_state.messages.append({"role": "user", "content": user_in})
     db_query('INSERT INTO chat_log (username, role, content, session_id) VALUES (?,?,?,?)', (st.session_state.username, "user", user_in, st.session_state.sid))
-    with st.chat_message("user"): st.markdown(user_in)
-    with st.chat_message("assistant"):
+    with st.chat_message("user", avatar="👤"): st.markdown(user_in)
+    with st.chat_message("assistant", avatar=ai_av):
         mid = "llama-3.2-11b-vision-instruct" if up else "llama-3.3-70b-versatile"
-        sys = f"You are {persona}. Global Context: {mem['c']}. Personality: {mem['i']}. AI Summary: {mem['s']}"
+        sys = f"You are {persona}. Context: {mem['c']}. Notes: {mem['i']}. Analysis: {mem['s']}"
         res = client.chat.completions.create(model=mid, messages=[{"role":"system","content":sys}]+st.session_state.messages)
         ans = res.choices[0].message.content; st.markdown(ans)
         st.session_state.messages.append({"role": "assistant", "content": ans})
