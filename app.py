@@ -1,18 +1,17 @@
 import streamlit as st
-import sqlite3, base64, os, time, uuid
+import sqlite3, base64, os, time, uuid, datetime
 import streamlit.components.v1 as components
 from fpdf import FPDF
 from groq import Groq
 
-# --- PART 1: SETTINGS & AVATAR ENGINE ---
-LOGO_FILENAME, AI_AVATAR_FILENAME, ADMIN = "vison_logo.jpg", "ai_logo_glow.jpg", "0102383"
-
-def get_img_64(p):
+# --- PART 1: SETTINGS & AVATARS ---
+LOGO, AVATAR, ADMIN = "vison_logo.jpg", "ai_logo_glow.jpg", "0102383"
+def get_64(p):
     if os.path.exists(p):
         with open(p, "rb") as f: return base64.b64encode(f.read()).decode()
     return None
 
-# --- PART 2: DATABASE ENGINE (SESSIONS & NAMING) ---
+# --- PART 2: DATABASE (WITH TIMESTAMPS) ---
 def db_q(q, d=(), fetch=False):
     conn = sqlite3.connect('vison_user_data.db')
     c = conn.cursor(); c.execute(q, d)
@@ -22,7 +21,7 @@ def db_q(q, d=(), fetch=False):
 def init_db():
     db_q('''CREATE TABLE IF NOT EXISTS users (username TEXT PRIMARY KEY, password TEXT, interests TEXT, level TEXT, secret_profile TEXT DEFAULT 'No data yet.')''')
     db_q('''CREATE TABLE IF NOT EXISTS chat_log (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, role TEXT, content TEXT, session_id TEXT)''')
-    db_q('''CREATE TABLE IF NOT EXISTS chat_sessions (session_id TEXT PRIMARY KEY, username TEXT, session_name TEXT)''')
+    db_q('''CREATE TABLE IF NOT EXISTS chat_sessions (session_id TEXT PRIMARY KEY, username TEXT, session_name TEXT, last_modified TEXT)''')
 
 # --- PART 3: PDF ENGINE ---
 def create_pdf(history):
@@ -31,7 +30,7 @@ def create_pdf(history):
     for m in history: pdf.multi_cell(0, 8, f"\n{'YOU' if m['role']=='user' else 'VISON'}: {m['content']}")
     return pdf.output(dest='S').encode('latin-1')
 
-# --- PART 4: BRAIN, EVOLUTION & POWER ---
+# --- PART 4: EVOLUTION & POWER ---
 def get_mem(u):
     past = db_q('SELECT content FROM chat_log WHERE username=? AND role="user" ORDER BY id DESC LIMIT 15', (u,), True)
     res = db_q('SELECT interests, level, secret_profile FROM users WHERE username=?', (u,), True)
@@ -44,7 +43,7 @@ def analyze_all(u):
     h = " ".join([f"{r}: {c}" for r, c in logs])
     try:
         client = Groq(api_key=st.secrets["GROQ_API_KEY"])
-        evo = client.chat.completions.create(model="llama-3.1-8b-instant", messages=[{"role":"user","content":f"Summarize emotional feelings/mental blocks for evolution: {h}"}])
+        evo = client.chat.completions.create(model="llama-3.1-8b-instant", messages=[{"role":"user","content":f"Summarize emotional blocks/feelings: {h}"}])
         pwr = client.chat.completions.create(model="llama-3.1-8b-instant", messages=[{"role":"user","content":f"Academic Power 0-100 (Num only): {h}"}])
         return evo.choices[0].message.content, int(''.join(filter(str.isdigit, pwr.choices[0].message.content)))
     except: return "Engine Error", 10
@@ -53,19 +52,18 @@ def analyze_all(u):
 st.set_page_config(page_title="VISON AI", layout="wide")
 st.markdown("<style>.title { font-size:40px; font-weight:800; background:linear-gradient(45deg,#a252ff,#0072ff); -webkit-background-clip:text; -webkit-text-fill-color:transparent; text-align:center; }</style>", unsafe_allow_html=True)
 
-# --- PART 6: SIDEBAR (ADVANCED SESSION MANAGER) ---
+# --- PART 6: SIDEBAR (TIMESTAMPS RESTORED) ---
 init_db()
 if 'logged_in' not in st.session_state: st.session_state.logged_in = False
 if not st.session_state.logged_in:
-    logo = get_img_64(LOGO_FILENAME)
+    logo = get_64(LOGO)
     if logo: st.markdown(f'<center><img src="data:image/jpeg;base64,{logo}" width="180"></center>', unsafe_allow_html=True)
     st.markdown('<p class="title">VISON CORE</p>', unsafe_allow_html=True)
     u, p = st.text_input("User"), st.text_input("Pass", type="password")
     if st.button("Unlock"):
         res = db_q('SELECT password FROM users WHERE username=?', (u.lower(),), True)
-        if not res: db_q('INSERT INTO users VALUES (?,?,?,?,?)', (u.lower(), p, "General", "HS", "New"))
-        if not res or res[0][0] == p:
-            st.session_state.logged_in, st.session_state.username = True, u.lower(); st.rerun()
+        if not res: db_q('INSERT INTO users VALUES (?,?,?,?,?)', (u.lower(), p, "STEM", "HS", "New"))
+        if not res or res[0][0] == p: st.session_state.logged_in, st.session_state.username = True, u.lower(); st.rerun()
     st.stop()
 
 with st.sidebar:
@@ -73,63 +71,22 @@ with st.sidebar:
     if st.button("🚪 Logout"): st.session_state.clear(); st.rerun()
     st.divider()
     
-    # Session Selection & Renaming
-    sessions = db_q('SELECT session_id, session_name FROM chat_sessions WHERE username=?', (st.session_state.username,), True)
-    if st.button("➕ New Separate Chat"):
-        new_id = str(uuid.uuid4())
-        db_q('INSERT INTO chat_sessions VALUES (?,?,?)', (new_id, st.session_state.username, "New Conversation"))
-        st.session_state.sid = new_id; st.session_state.messages = []; st.rerun()
+    # Session Manager with Timestamps
+    sessions = db_q('SELECT session_id, session_name, last_modified FROM chat_sessions WHERE username=? ORDER BY last_modified DESC', (st.session_state.username,), True)
+    if st.button("➕ New Chat"):
+        new_id, now = str(uuid.uuid4()), datetime.datetime.now().strftime("%d %b, %H:%M")
+        db_q('INSERT INTO chat_sessions VALUES (?,?,?,?)', (new_id, st.session_state.username, "New Conversation", now))
+        st.session_state.sid, st.session_state.messages = new_id, []; st.rerun()
     
     if sessions:
-        s_dict = {name: sid for sid, name in sessions}
-        sel_name = st.selectbox("Your Chats", list(s_dict.keys())[::-1])
-        st.session_state.sid = s_dict[sel_name]
+        s_list = [f"{name} ({mod})" for sid, name, mod in sessions]
+        s_dict = {f"{name} ({mod})": sid for sid, name, mod in sessions}
+        sel = st.selectbox("Your History", s_list)
+        st.session_state.sid = s_dict[sel]
         st.session_state.messages = [{"role":r, "content":c} for r,c in db_q('SELECT role, content FROM chat_log WHERE session_id=?', (st.session_state.sid,), True)]
         
-        new_name = st.text_input("Rename Current Chat", value=sel_name)
-        if st.button("💾 Update Chat Name"):
-            db_q('UPDATE chat_sessions SET session_name=? WHERE session_id=?', (new_name, st.session_state.sid))
-            st.rerun()
+        n_name = st.text_input("Rename Chat", value=sel.split(' (')[0])
+        if st.button("💾 Save Name"):
+            db_q('UPDATE chat_sessions SET session_name=? WHERE session_id=?', (n_name, st.session_state.sid)); st.rerun()
 
-    st.divider(); mem = get_mem(st.session_state.username)
-    ni = st.text_area("Personality Notes", value=mem["i"])
-    if st.button("Update Memory"): db_q('UPDATE users SET interests=? WHERE username=?', (ni, st.session_state.username)); st.success("Saved")
-    
-    if st.session_state.username == ADMIN:
-        with st.expander("🕵️ VAULT"):
-            if st.button("⚡ Sync Evolution"):
-                e, pw = analyze_all(st.session_state.username); st.session_state.evo, st.session_state.pwr = e, pw
-            if "pwr" in st.session_state: st.metric("Power Level", f"{st.session_state.pwr}/100"); st.code(st.session_state.evo)
-            for un, ui, us in db_q('SELECT username, interests, secret_profile FROM users', fetch=True):
-                st.write(f"**{un}**: {us}"); st.divider()
-
-    persona = st.selectbox("Persona", ["Strict Professor", "Friendly Mentor", "Quirky Scientist", "Casual Buddy"])
-    if st.button("🗑️ Purge Records"): db_q('DELETE FROM chat_log WHERE username=?', (st.session_state.username,)); st.rerun()
-
-# --- PART 7: CHAT INTERFACE ---
-st.markdown('<p class="title">🚀 VISON AI CORE</p>', unsafe_allow_html=True)
-if 'sid' not in st.session_state: 
-    st.session_state.sid = str(uuid.uuid4())
-    db_q('INSERT OR IGNORE INTO chat_sessions VALUES (?,?,?)', (st.session_state.sid, st.session_state.username, "Initial Chat"))
-if "messages" not in st.session_state: st.session_state.messages = []
-
-ai_av = f"data:image/jpeg;base64,{get_img_64(AI_AVATAR_FILENAME)}" if get_img_64(AI_AVATAR_FILENAME) else "🤖"
-for m in st.session_state.messages: 
-    with st.chat_message(m["role"], avatar=ai_av if m["role"]=="assistant" else "👤"): st.markdown(m["content"])
-
-up, user_in = st.file_uploader("Image", type=['png','jpg','jpeg']), st.chat_input("Message...")
-if user_in:
-    client = Groq(api_key=st.secrets["GROQ_API_KEY"])
-    st.session_state.messages.append({"role": "user", "content": user_in})
-    db_q('INSERT INTO chat_log (username, role, content, session_id) VALUES (?,?,?,?)', (st.session_state.username, "user", user_in, st.session_state.sid))
-    with st.chat_message("user", avatar="👤"): st.markdown(user_in)
-    with st.chat_message("assistant", avatar=ai_av):
-        mid = "llama-3.2-11b-vision-instruct" if up else "llama-3.3-70b-versatile"
-        sys = f"You are {persona}. Context: {mem['c']}. Notes: {mem['i']}. Analysis: {mem['s']}"
-        res = client.chat.completions.create(model=mid, messages=[{"role":"system","content":sys}]+st.session_state.messages)
-        ans = res.choices[0].message.content; st.markdown(ans)
-        st.session_state.messages.append({"role": "assistant", "content": ans})
-        db_q('INSERT INTO chat_log (username, role, content, session_id) VALUES (?,?,?,?)', (st.session_state.username, "assistant", ans, st.session_state.sid))
-
-# --- PART 8: SCROLL ---
-components.html("<script>window.parent.document.querySelectorAll('.stChatMessage').forEach(el => el.scrollIntoView({behavior:'smooth'}));</script>", height=0)
+    st.divider(); mem = get_mem(st.
