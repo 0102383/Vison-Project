@@ -8,8 +8,8 @@ import streamlit.components.v1 as components
 from fpdf import FPDF
 
 # --- ⚙️ MASTER SETTINGS ⚙️ ---
-LOGO_FILENAME = "vison_logo.jpg.png" 
-AI_AVATAR_FILENAME = "image_3b899c.jpg" # Make sure this matches your exact file name!
+LOGO_FILENAME = "vison_logo.jpg" 
+AI_AVATAR_FILENAME = "ai_logo_glow.jpg" 
 
 # --- 1. SAFE LIBRARY IMPORT ---
 client = None
@@ -138,3 +138,4 @@ session_names = {row[0]: row[1] for row in c.fetchall()}
 conn.close()
 
 if "current_session" not in st.session_state:
+
