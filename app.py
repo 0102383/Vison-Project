@@ -1,26 +1,50 @@
 import streamlit as st
 import sqlite3
 import base64
+import os
 
-# Safely check for the Groq library
+# --- 1. SAFE LIBRARY IMPORT ---
+GROQ_AVAILABLE = False
 try:
     from groq import Groq
+    GROQ_AVAILABLE = True
 except ImportError:
-    st.error("Groq library missing! Check requirements.txt")
+    st.error("🚀 **System Requirement Missing:** Please add `groq` to your `requirements.txt` file.")
 
-# 1. SETUP & SECRETS
+# --- 2. SETUP & SECRETS ---
 client = None
-if "GROQ_API_KEY" in st.secrets:
-    client = Groq(api_key=st.secrets["GROQ_API_KEY"])
+if GROQ_AVAILABLE:
+    try:
+        if "GROQ_API_KEY" in st.secrets:
+            client = Groq(api_key=st.secrets["GROQ_API_KEY"])
+    except Exception as e:
+        st.error(f"Connection Error: {e}")
 
-# 2. DATABASE (STRICT PER-USER FILTERING)
+# --- 3. DATABASE (USER ACCOUNTS & CHAT) ---
 def init_db():
     conn = sqlite3.connect('vison_user_data.db')
     c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS chat_log 
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, role TEXT, content TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS users (username TEXT PRIMARY KEY, password TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS chat_log (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, role TEXT, content TEXT)''')
     conn.commit()
     conn.close()
+
+def manage_user(username, password):
+    conn = sqlite3.connect('vison_user_data.db')
+    c = conn.cursor()
+    c.execute('SELECT password FROM users WHERE username=?', (username,))
+    row = c.fetchone()
+    if row is None:
+        c.execute('INSERT INTO users (username, password) VALUES (?, ?)', (username, password))
+        conn.commit()
+        conn.close()
+        return "registered"
+    elif row[0] == password:
+        conn.close()
+        return "authorized"
+    else:
+        conn.close()
+        return "denied"
 
 def save_message(username, role, content):
     conn = sqlite3.connect('vison_user_data.db')
@@ -46,103 +70,112 @@ def clear_user_memory(username):
 
 init_db()
 
-# 3. UI & CSS
+# --- 4. IMAGE ENCODER FUNCTION ---
+def get_image_base64(image_path):
+    if os.path.exists(image_path):
+        with open(image_path, "rb") as img_file:
+            return base64.b64encode(img_file.read()).decode('utf-8')
+    return None
+
+# --- 5. UI & CSS (SEAMLESS DARK MODE) ---
 st.set_page_config(page_title="VISON AI", page_icon="🚀", layout="wide")
 
 st.markdown("""
     <style>
-    @keyframes pulse {
-        0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(51, 217, 178, 0.7); }
-        70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(51, 217, 178, 0); }
-        100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(51, 217, 178, 0); }
-    }
-    .online-indicator {
-        display: inline-block; width: 12px; height: 12px;
-        background-color: #33d9b2; border-radius: 50%;
-        margin-right: 8px; animation: pulse 2s infinite;
-    }
-    .stApp { background-color: #0e1117; }
+    .stApp, [data-testid="stAppViewContainer"], .main { background-color: #0e1117 !important; }
+    [data-testid="stHeader"] { background-color: #0e1117 !important; }
+    [data-testid="stBottomBlock"], [data-testid="stBottom"] > div { background-color: #0e1117 !important; }
+    [data-testid="stSidebar"] { background-color: #0e1117 !important; border-right: 1px solid #1c2128 !important; }
     h1, h2, h3, h4, h5, p, span, div, label, li { color: #ffffff !important; }
-    [data-testid="stSidebar"] { background-color: #161b22; border-right: 1px solid #30363d; }
-    .main-title {
-        font-size: 50px !important; font-weight: 800 !important;
-        background: -webkit-linear-gradient(#00c6ff, #0072ff);
-        -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    [data-testid="stChatInput"] { background-color: #1c2128 !important; border: 1px solid #a252ff !important; border-radius: 15px; }
+    
+    .hero-container { display: flex; justify-content: center; align-items: center; padding: 10px; animation: fadeInDown 1.5s ease-out; }
+    .hero-image { max-width: 350px; border-radius: 20px; box-shadow: 0 0 25px rgba(138, 43, 226, 0.4); }
+    @keyframes fadeInDown { 0% { opacity: 0; transform: translateY(-40px); } 100% { opacity: 1; transform: translateY(0); } }
+    
+    @keyframes pulse {
+        0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(162, 82, 255, 0.7); }
+        70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(162, 82, 255, 0); }
+        100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(162, 82, 255, 0); }
     }
-    .login-box {
-        background-color: #1c2128; padding: 40px; border-radius: 20px;
-        border: 2px solid #00c6ff; text-align: center; margin-top: 50px;
-    }
-    .robot-container { fill: #000000; filter: drop-shadow(0 0 8px rgba(0, 198, 255, 0.8)); margin: 20px 0; }
+    .online-indicator { display: inline-block; width: 12px; height: 12px; background-color: #a252ff; border-radius: 50%; margin-right: 8px; animation: pulse 2s infinite; }
+    .main-title { font-size: 50px !important; font-weight: 800 !important; background: -webkit-linear-gradient(#a252ff, #0072ff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-align: center; margin-top: -15px; }
+    .login-box { background-color: #1c2128; padding: 40px; border-radius: 20px; border: 2px solid #a252ff; text-align: center; margin-top: 10px; }
     </style>
     """, unsafe_allow_html=True)
 
-# 4. LOGIN SYSTEM
+# --- 6. SMART LOGIN SYSTEM ---
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
 
 if not st.session_state.logged_in:
-    st.markdown('<p class="main-title">🚀 VISON CORE</p>', unsafe_allow_html=True)
+    logo_b64 = get_image_base64("vison_logo.jpg")
+    if logo_b64:
+        st.markdown(f'''<div class="hero-container"><img src="data:image/jpeg;base64,{logo_b64}" class="hero-image"></div>''', unsafe_allow_html=True)
+    
     cols = st.columns([1, 2, 1])
     with cols[1]:
         st.markdown('<div class="login-box">', unsafe_allow_html=True)
-        st.subheader("Student Authentication")
-        email_id = st.text_input("Username / Email", placeholder="e.g. student@bivic.com")
-        if st.button("Access AI Core"):
-            if email_id:
-                st.session_state.logged_in = True
-                st.session_state.username = email_id
-                if "messages" in st.session_state: del st.session_state.messages
-                st.rerun()
+        st.subheader("🔑 Student Gateway")
+        st.write("First time? Enter a username and a new password to register.")
+        
+        user_id = st.text_input("Username / Email")
+        user_pass = st.text_input("Password", type="password")
+        
+        if st.button("Unlock AI"):
+            if user_id and user_pass:
+                # FIX: Auto-lowercase the username so case-sensitivity doesn't lose history
+                clean_user_id = user_id.lower().strip() 
+                status = manage_user(clean_user_id, user_pass)
+                
+                if status in ["registered", "authorized"]:
+                    st.session_state.logged_in = True
+                    st.session_state.username = clean_user_id
+                    # FIX: Force clear the screen memory to ensure we load the database fresh
+                    if "messages" in st.session_state: 
+                        del st.session_state.messages
+                    st.rerun()
+                else:
+                    st.error("❌ Incorrect Password for this Username.")
             else:
-                st.error("Identity required.")
+                st.warning("Please fill in both fields.")
         st.markdown('</div>', unsafe_allow_html=True)
     st.stop()
 
-# Load User History
+# --- 7. CHAT APP (POST-LOGIN) ---
 if "messages" not in st.session_state:
     st.session_state.messages = load_memory(st.session_state.username)
-    if not st.session_state.messages:
-        welcome = f"Systems active. Welcome, {st.session_state.username}."
-        st.session_state.messages = [{"role": "assistant", "content": welcome}]
-        save_message(st.session_state.username, "assistant", welcome)
 
-# SIDEBAR
 with st.sidebar:
-    st.markdown(f"**👤 Student:** `{st.session_state.username}`")
-    if st.button("🔓 Logout"):
+    st.markdown(f"**👤 User:** `{st.session_state.username}`")
+    if st.button("Logout"):
         st.session_state.logged_in = False
-        if "messages" in st.session_state: del st.session_state.messages
+        # FIX: Wipes the screen memory so the next user doesn't see your chat!
+        if "messages" in st.session_state: 
+            del st.session_state.messages
         st.rerun()
-    
     st.markdown("---")
-    st.markdown("### ⚙️ Settings")
     lang = st.selectbox("Language", ["English", "Bahasa Melayu", "Japanese"])
     persona = st.selectbox("Persona", ["Friendly Mentor", "Quirky Scientist", "Strict Professor"])
-    
-    # CLEAR HISTORY BUTTON (RE-ADDED AND VISIBLE)
-    if st.button("🗑️ Clear My History"):
+    if st.button("🗑️ Wipe My Memory"):
         clear_user_memory(st.session_state.username)
-        st.session_state.messages = [{"role": "assistant", "content": "Memory cleared. How can I help you start fresh?"}]
+        st.session_state.messages = []
         st.rerun()
-    
     st.markdown("---")
-    st.markdown("""
-        <center>
-        <svg class="robot-container" width="70" height="70" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-            <path d="M12,2A2,2 0 0,1 14,4C14,4.74 13.6,5.39 13,5.73V7H14A3,3 0 0,1 17,10V11H18A2,2 0 0,1 20,13V18A2,2 0 0,1 18,20H6A2,2 0 0,1 4,18V13A2,2 0 0,1 6,11H7V10A3,3 0 0,1 10,7H11V5.73C10.4,5.39 10,4.74 10,4A2,2 0 0,1 12,2M7.5,13A1.5,1.5 0 0,0 6,14.5A1.5,1.5 0 0,0 7.5,16A1.5,1.5 0 0,0 9,14.5A1.5,1.5 0 0,0 7.5,13M16.5,13A1.5,1.5 0 0,0 15,14.5A1.5,1.5 0 0,0 16.5,16A1.5,1.5 0 0,0 18,14.5A1.5,1.5 0 0,0 16.5,13M12,14L10.75,17H13.25L12,14Z"/>
-        </svg>
-        <div style="background: rgba(51, 217, 178, 0.1); padding: 5px; border-radius: 10px; border: 1px solid rgba(51, 217, 178, 0.3); margin-bottom: 20px;">
-            <span class="online-indicator"></span><span style="color: #33d9b2; font-weight: bold;">SYSTEM ONLINE</span>
-        </div>
-        </center>
-    """, unsafe_allow_html=True)
     
-    st.header("🔍 Image Scanner")
+    sidebar_logo = get_image_base64("vison_logo.jpg")
+    if sidebar_logo:
+        st.markdown(f"""<center><img src="data:image/jpeg;base64,{sidebar_logo}" style="max-width: 100px; border-radius: 10px; margin-bottom: 10px;"></center>""", unsafe_allow_html=True)
+    
+    st.markdown("""<div style="background: rgba(162, 82, 255, 0.1); padding: 5px; border-radius: 10px; border: 1px solid rgba(162, 82, 255, 0.3); margin-bottom: 20px; text-align: center;"><span class="online-indicator" style="background-color: #a252ff;"></span><span style="color: #a252ff; font-weight: bold;">SYSTEM ONLINE</span></div>""", unsafe_allow_html=True)
     uploaded_file = st.file_uploader("Upload STEM Image", type=['png', 'jpg', 'jpeg'])
 
-# MAIN PAGE
-st.markdown('<p class="main-title">🚀 VISON AI</p>', unsafe_allow_html=True)
+st.markdown('<p class="main-title">🚀 VISON AI CORE</p>', unsafe_allow_html=True)
+
+if not st.session_state.messages:
+    welcome = f"Systems active. How can I help you today, {st.session_state.username}?"
+    st.session_state.messages = [{"role": "assistant", "content": welcome}]
+    save_message(st.session_state.username, "assistant", welcome)
 
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
@@ -173,7 +206,6 @@ if user_input:
                         clean_c = m["content"]
                         if isinstance(clean_c, list) and not uploaded_file: clean_c = clean_c[0]["text"]
                         api_msgs.append({"role": m["role"], "content": clean_c})
-                    
                     mid = "llama-3.2-11b-vision-preview" if uploaded_file else "llama-3.1-8b-instant"
                     res = client.chat.completions.create(model=mid, messages=api_msgs)
                     ans = res.choices[0].message.content
