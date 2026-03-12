@@ -26,7 +26,6 @@ def init_db():
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS users (username TEXT PRIMARY KEY, password TEXT, interests TEXT, level TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS chat_log (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, role TEXT, content TEXT, session_id TEXT DEFAULT 'default')''')
-    # 🆕 NEW TABLE: This stores your custom chat names!
     c.execute('''CREATE TABLE IF NOT EXISTS chat_sessions (session_id TEXT PRIMARY KEY, username TEXT, session_name TEXT)''')
     
     try: c.execute("ALTER TABLE users ADD COLUMN interests TEXT")
@@ -131,11 +130,9 @@ if not st.session_state.logged_in:
 conn = sqlite3.connect('vison_user_data.db')
 c = conn.cursor()
 
-# Get all session IDs
 c.execute('SELECT DISTINCT session_id FROM chat_log WHERE username=?', (st.session_state.username,))
 db_sessions = [row[0] for row in c.fetchall() if row[0] is not None]
 
-# Get custom session names
 c.execute('SELECT session_id, session_name FROM chat_sessions WHERE username=?', (st.session_state.username,))
 session_names = {row[0]: row[1] for row in c.fetchall()}
 conn.close()
@@ -149,11 +146,10 @@ if "current_session" not in st.session_state:
 if st.session_state.current_session not in db_sessions:
     db_sessions.append(st.session_state.current_session)
 
-# Format function to make the dropdown look pretty!
 def format_session_name(s_id):
     if s_id in session_names:
         return session_names[s_id]
-    return f"Chat ({s_id[:6]})" # Shows a short ID if no name is set
+    return f"Chat ({s_id[:6]})" 
 
 # The 1-Hour Auto-Brain
 if "last_learn_time" not in st.session_state:
@@ -183,7 +179,6 @@ with st.sidebar:
         st.session_state.messages = []
         st.rerun()
         
-    # The Dropdown with pretty names
     reversed_sessions = db_sessions[::-1]
     selected_session = st.selectbox(
         "Jump to past chat:", 
@@ -197,7 +192,6 @@ with st.sidebar:
         st.session_state.messages = load_memory(st.session_state.username, selected_session)
         st.rerun()
         
-    # 🆕 RENAME CHAT TOOL
     with st.expander("✏️ Rename Current Chat"):
         current_display_name = format_session_name(st.session_state.current_session)
         new_name_input = st.text_input("New Name", value=current_display_name, label_visibility="collapsed")
@@ -208,6 +202,32 @@ with st.sidebar:
             conn.close()
             st.success("Renamed!")
             time.sleep(0.5)
+            st.rerun()
+            
+    st.markdown("---")
+    
+    # 🆕 UPDATED CUSTOM QUIZ GENERATOR
+    st.subheader("📝 Quick Quiz")
+    with st.expander("Setup & Start Quiz"):
+        # Student Info
+        quiz_country = st.text_input("Country", value="Malaysia") 
+        quiz_school = st.text_input("School Name (Optional)", placeholder="e.g., SMK...")
+        quiz_grade = st.selectbox("Grade / Form", ["Form 1", "Form 2", "Form 3", "Form 4", "Form 5", "Primary School", "College / University"])
+        
+        st.markdown("---")
+        
+        # Quiz Settings
+        quiz_subject = st.text_input("Subject", value="Math & STEM")
+        quiz_difficulty = st.selectbox("Difficulty", ["Easy", "Medium", "Hard", "Expert"])
+        quiz_questions = st.number_input("Number of Questions", min_value=1, max_value=20, value=3)
+        
+        if st.button("🚀 Start Quiz!", use_container_width=True):
+            school_context = f" at {quiz_school}" if quiz_school else ""
+            st.session_state.pending_prompt = (
+                f"I want to test my knowledge! I am a student in {quiz_country}{school_context}, currently in {quiz_grade}. "
+                f"Please generate a {quiz_difficulty} difficulty, {quiz_questions}-question multiple choice quiz on the subject of '{quiz_subject}'. "
+                f"Ask me the questions ONE by ONE. Wait for me to answer each question before revealing if I am correct and moving to the next one."
+            )
             st.rerun()
     
     st.markdown("---")
@@ -259,7 +279,13 @@ for msg in st.session_state.messages:
 st.markdown("---")
 
 uploaded_file = st.file_uploader("➕ Add Image / Equation", type=['png', 'jpg', 'jpeg'], key="vison_uploader_main")
+
+# Get user input either from the chat bar, OR from the Quiz Button
 user_input = st.chat_input("Ask Vison anything...")
+
+if st.session_state.get("pending_prompt"):
+    user_input = st.session_state.pending_prompt
+    st.session_state.pending_prompt = None # Clear it so it only runs once!
 
 if user_input:
     st.session_state.messages.append({"role": "user", "content": user_input})
@@ -280,27 +306,3 @@ if user_input:
                 )
                 ans = res.choices[0].message.content
                 st.markdown(ans)
-                
-                tokens = res.usage.total_tokens
-                st.caption(f"⚙️ **Model:** {model_id} | 🧠 **Tokens:** {tokens}")
-                
-                st.session_state.messages.append({"role": "assistant", "content": ans})
-                save_message(st.session_state.username, "assistant", ans, st.session_state.current_session)
-            except Exception as e:
-                st.error(f"Error: {e}")
-
-# --- 8. AUTO-SCROLL TO BOTTOM JAVASCRIPT ---
-components.html(
-    """
-    <script>
-        function scrollToBottom() {
-            var chatElements = window.parent.document.querySelectorAll('.stChatMessage');
-            if (chatElements.length > 0) {
-                chatElements[chatElements.length - 1].scrollIntoView({ behavior: 'smooth' });
-            }
-        }
-        setTimeout(scrollToBottom, 300);
-    </script>
-    """,
-    height=0,
-)
