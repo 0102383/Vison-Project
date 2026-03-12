@@ -9,7 +9,7 @@ from fpdf import FPDF
 
 # --- ⚙️ MASTER SETTINGS ⚙️ ---
 LOGO_FILENAME = "vison_logo.jpg.png" 
-AI_AVATAR_FILENAME = "ai_logo_glow.jpg"
+AI_AVATAR_FILENAME = "image_3b899c.jpg" # Make sure this matches your exact file name!
 
 # --- 1. SAFE LIBRARY IMPORT ---
 client = None
@@ -26,6 +26,9 @@ def init_db():
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS users (username TEXT PRIMARY KEY, password TEXT, interests TEXT, level TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS chat_log (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, role TEXT, content TEXT, session_id TEXT DEFAULT 'default')''')
+    # 🆕 NEW TABLE: This stores your custom chat names!
+    c.execute('''CREATE TABLE IF NOT EXISTS chat_sessions (session_id TEXT PRIMARY KEY, username TEXT, session_name TEXT)''')
+    
     try: c.execute("ALTER TABLE users ADD COLUMN interests TEXT")
     except: pass
     try: c.execute("ALTER TABLE users ADD COLUMN level TEXT")
@@ -127,8 +130,14 @@ if not st.session_state.logged_in:
 # --- 5. CHAT SESSIONS & AUTO-LEARN LOGIC ---
 conn = sqlite3.connect('vison_user_data.db')
 c = conn.cursor()
+
+# Get all session IDs
 c.execute('SELECT DISTINCT session_id FROM chat_log WHERE username=?', (st.session_state.username,))
 db_sessions = [row[0] for row in c.fetchall() if row[0] is not None]
+
+# Get custom session names
+c.execute('SELECT session_id, session_name FROM chat_sessions WHERE username=?', (st.session_state.username,))
+session_names = {row[0]: row[1] for row in c.fetchall()}
 conn.close()
 
 if "current_session" not in st.session_state:
@@ -137,11 +146,16 @@ if "current_session" not in st.session_state:
     else:
         st.session_state.current_session = str(uuid.uuid4())
 
-# 🛠️ THE BUG FIX: Force the app to recognize the new chat even if it's empty!
 if st.session_state.current_session not in db_sessions:
     db_sessions.append(st.session_state.current_session)
 
-# The 1-Hour Auto-Brain (Every 3600 seconds)
+# Format function to make the dropdown look pretty!
+def format_session_name(s_id):
+    if s_id in session_names:
+        return session_names[s_id]
+    return f"Chat ({s_id[:6]})" # Shows a short ID if no name is set
+
+# The 1-Hour Auto-Brain
 if "last_learn_time" not in st.session_state:
     st.session_state.last_learn_time = time.time()
 
@@ -169,11 +183,12 @@ with st.sidebar:
         st.session_state.messages = []
         st.rerun()
         
-    # 🛠️ THE BUG FIX: The Dropdown menu is now safe
+    # The Dropdown with pretty names
     reversed_sessions = db_sessions[::-1]
     selected_session = st.selectbox(
         "Jump to past chat:", 
         reversed_sessions, 
+        format_func=format_session_name,
         index=reversed_sessions.index(st.session_state.current_session)
     )
     
@@ -181,6 +196,19 @@ with st.sidebar:
         st.session_state.current_session = selected_session
         st.session_state.messages = load_memory(st.session_state.username, selected_session)
         st.rerun()
+        
+    # 🆕 RENAME CHAT TOOL
+    with st.expander("✏️ Rename Current Chat"):
+        current_display_name = format_session_name(st.session_state.current_session)
+        new_name_input = st.text_input("New Name", value=current_display_name, label_visibility="collapsed")
+        if st.button("💾 Save Name", use_container_width=True):
+            conn = sqlite3.connect('vison_user_data.db')
+            conn.cursor().execute('INSERT OR REPLACE INTO chat_sessions (session_id, username, session_name) VALUES (?, ?, ?)', (st.session_state.current_session, st.session_state.username, new_name_input))
+            conn.commit()
+            conn.close()
+            st.success("Renamed!")
+            time.sleep(0.5)
+            st.rerun()
     
     st.markdown("---")
     st.subheader("⏱️ Focus Timer")
@@ -206,7 +234,6 @@ with st.sidebar:
         save_profile(st.session_state.username, new_ints, new_level)
         st.success("Learned! 🚀")
     
-    # ADDED THE STRICT PROFESSOR HERE! 🎓
     persona = st.selectbox("Persona", ["Friendly Mentor", "Quirky Scientist", "Strict Professor", "Casual Chat Buddy"])
     lang = st.selectbox("Language", ["English", "Bahasa Melayu", "Japanese"])
 
