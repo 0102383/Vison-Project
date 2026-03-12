@@ -9,7 +9,7 @@ from fpdf import FPDF
 
 # --- ⚙️ MASTER SETTINGS ⚙️ ---
 LOGO_FILENAME = "vison_logo.jpg" 
-AI_AVATAR_FILENAME = "ai_logo_glow.jpg"
+AI_AVATAR_FILENAME = "ai_logo_glowjpg"
 ADMIN_USERNAME = "0102383" # 👑 ONLY THIS USERNAME CAN SEE THE SECRET DATA!
 
 # --- 1. SAFE LIBRARY IMPORT ---
@@ -178,7 +178,7 @@ if "last_learn_time" not in st.session_state:
     st.session_state.last_learn_time = time.time()
 
 # 🧠 THE EMOTIONAL AUTO-BRAIN
-if time.time() - st.session_state.last_learn_time > 3600:  # <--- Change this 3600 to 5 to test it faster!
+if time.time() - st.session_state.last_learn_time > 3600:  
     if client and "messages" in st.session_state and len(st.session_state.messages) > 2:
         try:
             recent_texts = [m["content"] for m in st.session_state.messages if m["role"] == "user"][-8:]
@@ -213,4 +213,68 @@ with st.sidebar:
     if st.button("🚪 Logout", use_container_width=True):
         st.session_state.clear() # Clears session data safely
         st.rerun()
-
+        
+    st.markdown("---")
+    
+    st.subheader("📁 Chat History")
+    if st.button("➕ New Chat"):
+        st.session_state.current_session = str(uuid.uuid4())
+        st.session_state.messages = []
+        st.session_state.quiz_mode = False
+        st.rerun()
+        
+    reversed_sessions = db_sessions[::-1]
+    selected_session = st.selectbox(
+        "Jump to past chat:", 
+        reversed_sessions, 
+        format_func=format_session_name,
+        index=reversed_sessions.index(st.session_state.current_session)
+    )
+    
+    if selected_session != st.session_state.current_session:
+        st.session_state.current_session = selected_session
+        st.session_state.messages = load_memory(st.session_state.username, selected_session)
+        st.session_state.quiz_mode = False
+        st.rerun()
+        
+    with st.expander("✏️ Rename Current Chat"):
+        current_display_name = format_session_name(st.session_state.current_session)
+        new_name_input = st.text_input("New Name", value=current_display_name, label_visibility="collapsed")
+        if st.button("💾 Save Name", use_container_width=True):
+            conn = sqlite3.connect('vison_user_data.db')
+            conn.cursor().execute('INSERT OR REPLACE INTO chat_sessions (session_id, username, session_name) VALUES (?, ?, ?)', (st.session_state.current_session, st.session_state.username, new_name_input))
+            conn.commit()
+            conn.close()
+            st.success("Renamed!")
+            time.sleep(0.5)
+            st.rerun()
+            
+    st.markdown("---")
+    
+    st.subheader("📝 Quick Quiz")
+    with st.expander("Setup & Start Quiz"):
+        quiz_country = st.text_input("Country", value="Malaysia") 
+        quiz_school = st.text_input("School Name (Optional)", placeholder="e.g., SMK...")
+        quiz_grade = st.selectbox("Grade / Form", ["Form 1", "Form 2", "Form 3", "Form 4", "Form 5", "Primary School", "College / University"])
+        
+        st.markdown("---")
+        
+        quiz_subject = st.text_input("Subject", value="Math & STEM")
+        quiz_difficulty = st.selectbox("Difficulty", ["Easy", "Medium", "Hard", "Expert"])
+        quiz_questions = st.number_input("Number of Questions", min_value=1, max_value=20, value=3)
+        quiz_timer = st.number_input("Seconds per Question", min_value=10, max_value=300, value=30)
+        
+        if st.button("🚀 Start Quiz!", use_container_width=True):
+            school_context = f" at {quiz_school}" if quiz_school else ""
+            st.session_state.quiz_mode = True
+            st.session_state.quiz_time_limit = quiz_timer
+            st.session_state.pending_prompt = (
+                f"I want to test my knowledge! I am a student in {quiz_country}{school_context}, "
+                f"currently in {quiz_grade}. Please generate a {quiz_difficulty} difficulty, "
+                f"{quiz_questions}-question multiple choice quiz on the subject of '{quiz_subject}'. "
+                f"Ask me the questions ONE by ONE. Wait for me to answer each question before "
+                f"revealing if I am correct and moving to the next one. "
+                f"IMPORTANT: I have exactly {quiz_timer} seconds to answer each question. "
+                f"Let me know if I am too slow!"
+            )
+            st.rerun()
