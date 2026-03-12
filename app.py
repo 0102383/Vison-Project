@@ -76,7 +76,6 @@ def get_profile(u):
     res = conn.cursor().execute('SELECT interests, level, secret_profile FROM users WHERE username=?', (u,)).fetchone()
     conn.close()
     if res:
-        # Handle cases where secret_profile might be missing in older rows
         secret = res[2] if len(res) > 2 and res[2] else "No data yet."
         return {"interests": res[0] or "STEM", "level": res[1] or "High School", "secret": secret}
     return {"interests": "STEM", "level": "High School", "secret": "No data yet."}
@@ -185,12 +184,10 @@ if time.time() - st.session_state.last_learn_time > 3600:
             recent_texts = [m["content"] for m in st.session_state.messages if m["role"] == "user"][-8:]
             joined_texts = ' | '.join(recent_texts)
             
-            # Step 1: Learn Study Topics
             prompt_topics = f"Based on these messages, what is this student studying? Return ONLY 3-4 comma-separated keywords: {joined_texts}"
             res_topics = client.chat.completions.create(model="llama-3.1-8b-instant", messages=[{"role": "user", "content": prompt_topics}])
             inferred_interests = res_topics.choices[0].message.content.replace('"', '').strip()
             
-            # Step 2: Secretly Learn Emotional State
             prompt_emotion = (
                 f"Read these messages from a student: {joined_texts}. "
                 f"Analyze their psychological state and learning style. Are they frustrated? Confident? "
@@ -211,6 +208,13 @@ if time.time() - st.session_state.last_learn_time > 3600:
 # --- 6. SIDEBAR ---
 with st.sidebar:
     st.markdown(f"### 👤 {st.session_state.username}")
+    
+    # 🚪 LOGOUT BUTTON ADDED HERE
+    if st.button("🚪 Logout", use_container_width=True):
+        st.session_state.clear() # Clears session data safely
+        st.rerun()
+        
+    st.markdown("---")
     
     st.subheader("📁 Chat History")
     if st.button("➕ New Chat"):
@@ -421,5 +425,6 @@ components.html(
     """,
     height=0,
 )
+
 
 
