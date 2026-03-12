@@ -11,133 +11,108 @@ from groq import Groq
 # --- PART 1: MASTER SETTINGS ---
 LOGO_FILENAME = "vison_logo.jpg" 
 AI_AVATAR_FILENAME = "ai_logo_glow.jpg"
-ADMIN_USERNAME = "0102383" 
+ADMIN_USERNAME = "0102383"
 
-# --- PART 2: DATABASE & SECURITY ---
+# --- PART 2: DATABASE ---
+def db_query(q, data=(), fetch=False):
+    conn = sqlite3.connect('vison_user_data.db')
+    c = conn.cursor(); c.execute(q, data)
+    res = c.fetchall() if fetch else None
+    conn.commit(); conn.close(); return res
+
 def init_db():
-    conn = sqlite3.connect('vison_user_data.db')
-    c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS users (username TEXT PRIMARY KEY, password TEXT, interests TEXT, level TEXT, secret_profile TEXT DEFAULT 'No data yet.')''')
-    c.execute('''CREATE TABLE IF NOT EXISTS chat_log (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, role TEXT, content TEXT, session_id TEXT DEFAULT 'default')''')
-    conn.commit(); conn.close()
+    db_query('''CREATE TABLE IF NOT EXISTS users (username TEXT PRIMARY KEY, password TEXT, interests TEXT, level TEXT, secret_profile TEXT DEFAULT 'No data yet.')''')
+    db_query('''CREATE TABLE IF NOT EXISTS chat_log (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, role TEXT, content TEXT, session_id TEXT)''')
 
-def manage_user(u, p):
-    conn = sqlite3.connect('vison_user_data.db')
-    c = conn.cursor()
-    c.execute('SELECT password FROM users WHERE username=?', (u,))
-    row = c.fetchone()
-    if row is None:
-        c.execute('INSERT INTO users (username, password, interests, level) VALUES (?, ?, ?, ?)', (u, p, "General STEM", "High School"))
-        conn.commit(); conn.close(); return "registered"
-    conn.close()
-    return "authorized" if row[0] == p else "denied"
-
-# --- PART 3: PDF GENERATION ENGINE ---
+# --- PART 3: PDF ENGINE ---
 def create_pdf(history):
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", 'B', 16)
-    pdf.cell(200, 10, txt="VISON AI - STUDY NOTES", ln=True, align='C')
-    pdf.set_font("Arial", size=11)
-    for m in history:
-        role = "YOU" if m['role'] == "user" else "VISON AI"
-        pdf.multi_cell(0, 8, txt=f"\n{role}: {m['content']}")
+    pdf = FPDF(); pdf.add_page(); pdf.set_font("Arial", 'B', 16)
+    pdf.cell(200, 10, "VISON AI NOTES", ln=True, align='C'); pdf.set_font("Arial", size=11)
+    for m in history: pdf.multi_cell(0, 8, f"\n{'YOU' if m['role']=='user' else 'VISON'}: {m['content']}")
     return pdf.output(dest='S').encode('latin-1')
 
-# --- PART 4: GLOBAL MEMORY & BRAIN LOGIC ---
-def get_global_context(u):
-    conn = sqlite3.connect('vison_user_data.db')
-    past_logs = conn.cursor().execute('SELECT content FROM chat_log WHERE username=? AND role="user" ORDER BY id DESC LIMIT 15', (u,)).fetchall()
-    res = conn.cursor().execute('SELECT interests, level, secret_profile FROM users WHERE username=?', (u,)).fetchone()
-    conn.close()
-    context_summary = " ".join([row[0] for row in past_logs])
-    return {
-        "ints": res[0] if res else "General", 
-        "lvl": res[1] if res else "High School", 
-        "sec": res[2] if res else "No data yet.",
-        "history_context": context_summary[-600:] 
-    }
+# --- PART 4: BRAIN, EVOLUTION & POWER LOGIC ---
+def get_mem(u):
+    past = db_query('SELECT content FROM chat_log WHERE username=? AND role="user" ORDER BY id DESC LIMIT 15', (u,), True)
+    res = db_query('SELECT interests, level, secret_profile FROM users WHERE username=?', (u,), True)
+    txt = " ".join([r[0] for r in past])
+    return {"i": res[0][0], "l": res[0][1], "s": res[0][2], "c": txt[-600:]} if res else {"i":"STEM","l":"High School","s":"None","c":""}
 
-def save_mem(u, i, l):
-    conn = sqlite3.connect('vison_user_data.db')
-    conn.cursor().execute('UPDATE users SET interests=?, level=? WHERE username=?', (i, l, u))
-    conn.commit(); conn.close()
+def analyze_student_stats(u):
+    logs = db_query('SELECT role, content FROM chat_log WHERE username=? ORDER BY id DESC LIMIT 20', (u,), True)
+    if not logs: return "Not enough data.", 0
+    history_text = " ".join([f"{r}: {c}" for r, c in logs])
+    try:
+        client = Groq(api_key=st.secrets["GROQ_API_KEY"])
+        # 1. Emotional Evolution String
+        evo_res = client.chat.completions.create(model="llama-3.1-8b-instant", messages=[{"role": "user", "content": f"Summarize only the emotional feelings and mental blocks of this student for evolution: {history_text}"}])
+        # 2. Academic Power Level
+        pwr_res = client.chat.completions.create(model="llama-3.1-8b-instant", messages=[{"role": "user", "content": f"Based on the knowledge shown, give a Power Level from 0-100. Return ONLY the number: {history_text}"}])
+        power_val = int(''.join(filter(str.isdigit, pwr_res.choices[0].message.content)))
+        return evo_res.choices[0].message.content, power_val
+    except: return "Engine Offline", 10
 
-def purge_memory(u):
-    conn = sqlite3.connect('vison_user_data.db')
-    conn.cursor().execute('DELETE FROM chat_log WHERE username=?', (u,))
-    conn.cursor().execute('UPDATE users SET interests="General", secret_profile="No data yet." WHERE username=?', (u,))
-    conn.commit(); conn.close()
-
-# --- PART 5: UI STYLING ---
+# --- PART 5: UI STYLE ---
 st.set_page_config(page_title="VISON AI", layout="wide")
-st.markdown("<style>.main-title { font-size: 50px; font-weight: 800; background: linear-gradient(45deg, #a252ff, #0072ff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-align: center; }</style>", unsafe_allow_html=True)
+st.markdown("<style>.title { font-size:45px; font-weight:800; background:linear-gradient(45deg,#a252ff,#0072ff); -webkit-background-clip:text; -webkit-text-fill-color:transparent; text-align:center; }</style>", unsafe_allow_html=True)
 
-# --- PART 6: SIDEBAR (THE BRAIN CONTROLLER) ---
+# --- PART 6: SIDEBAR & ADMIN VAULT ---
 init_db()
 if 'logged_in' not in st.session_state: st.session_state.logged_in = False
-
 if not st.session_state.logged_in:
-    st.markdown('<p class="main-title">VISON LOGIN</p>', unsafe_allow_html=True)
-    u_log = st.text_input("Username"); p_log = st.text_input("Password", type="password")
-    if st.button("Unlock Core"):
-        if manage_user(u_log.lower().strip(), p_log) != "denied":
-            st.session_state.logged_in = True; st.session_state.username = u_log.lower().strip()
-            st.session_state.current_session = str(uuid.uuid4()); st.rerun()
+    st.markdown('<p class="title">VISON CORE</p>', unsafe_allow_html=True)
+    u, p = st.text_input("User"), st.text_input("Pass", type="password")
+    if st.button("Unlock"):
+        res = db_query('SELECT password FROM users WHERE username=?', (u.lower(),), True)
+        if not res: db_query('INSERT INTO users VALUES (?,?,?,?,?)', (u.lower(), p, "STEM", "High School", "New Student"))
+        if not res or res[0][0] == p:
+            st.session_state.logged_in, st.session_state.username = True, u.lower()
+            st.session_state.sid = str(uuid.uuid4()); st.rerun()
     st.stop()
 
 with st.sidebar:
     st.title(f"🚀 {st.session_state.username.upper()}")
-    if st.button("🚪 Logout", use_container_width=True): st.session_state.clear(); st.rerun()
-    st.divider()
+    if st.button("Logout"): st.session_state.clear(); st.rerun()
+    st.divider(); mem = get_mem(st.session_state.username)
+    if st.button("➕ New Chat"): st.session_state.sid = str(uuid.uuid4()); st.session_state.messages = []; st.rerun()
+    ni = st.text_area("Personality Notes", value=mem["i"])
+    if st.button("Update Memory"): db_query('UPDATE users SET interests=? WHERE username=?', (ni, st.session_state.username)); st.success("Saved")
     
-    if st.button("➕ New Separate Chat", use_container_width=True):
-        st.session_state.current_session = str(uuid.uuid4()); st.session_state.messages = []; st.success("New Session Active")
+    if st.session_state.username == ADMIN:
+        with st.expander("🕵️ VISON VAULT (STATS)"):
+            if st.button("⚡ Sync Evolution & Power"):
+                evo, pwr = analyze_student_stats(st.session_state.username)
+                st.session_state.evo, st.session_state.pwr = evo, pwr
+            if "pwr" in st.session_state:
+                st.metric("Academic Power Level", f"{st.session_state.pwr}/100")
+                st.subheader("🧬 Evolution (Feelings)")
+                st.code(st.session_state.evo, language="text")
+            st.divider()
+            for un, ui, us in db_query('SELECT username, interests, secret_profile FROM users', fetch=True):
+                st.write(f"**{un}**: {ui}"); st.divider()
 
-    st.subheader("🧠 Global Memory")
-    prof = get_global_context(st.session_state.username)
-    new_ints = st.text_area("Personality / Study Notes", value=prof["ints"])
-    new_lvl = st.selectbox("Level", ["Primary", "High School", "University"], index=1)
-    if st.button("💾 Save to Global Memory"):
-        save_mem(st.session_state.username, new_ints, new_lvl); st.success("Saved!")
+    st.divider(); persona = st.selectbox("Persona", ["Friendly Mentor", "Strict Professor", "Quirky Scientist", "Casual Buddy"])
+    if st.button("🗑️ Purge Memory"): db_query('DELETE FROM chat_log WHERE username=?', (st.session_state.username,)); st.rerun()
 
-    with st.expander("⚠️ Danger Zone"):
-        if st.button("🗑️ Purge All Memory", help="This wipes all chat history and AI notes permanently."):
-            purge_memory(st.session_state.username); st.session_state.messages = []; st.warning("Memory Wiped!"); time.sleep(1); st.rerun()
-
-    st.divider()
-    persona = st.selectbox("Persona", ["Friendly Mentor", "Strict Professor", "Quirky Scientist", "Casual Buddy"])
-    lang = st.selectbox("Language", ["English", "Bahasa Melayu"])
-    
-    if st.session_state.username == ADMIN_USERNAME:
-        with st.expander("🕵️ ADMIN VAULT"):
-            conn = sqlite3.connect('vison_user_data.db'); users = conn.cursor().execute('SELECT username, interests, secret_profile FROM users').fetchall(); conn.close()
-            for un, ui, us in users: st.write(f"**{un}**\nNotes: {ui}\nAI Analysis: {us}"); st.divider()
-
-# --- PART 7: MAIN CHAT LOGIC ---
-st.markdown('<p class="main-title">🚀 VISON AI CORE</p>', unsafe_allow_html=True)
+# --- PART 7: CHAT ---
+st.markdown('<p class="title">🚀 VISON AI CORE</p>', unsafe_allow_html=True)
 if "messages" not in st.session_state: st.session_state.messages = []
-
-for m in st.session_state.messages:
+for m in st.session_state.messages: 
     with st.chat_message(m["role"]): st.markdown(m["content"])
 
-up = st.file_uploader("Upload Image", type=['png','jpg','jpeg'])
-user_in = st.chat_input("Ask Vison...")
-
+up, user_in = st.file_uploader("Image", type=['png','jpg','jpeg']), st.chat_input("Ask...")
 if user_in:
     client = Groq(api_key=st.secrets["GROQ_API_KEY"])
     st.session_state.messages.append({"role": "user", "content": user_in})
-    conn = sqlite3.connect('vison_user_data.db'); conn.cursor().execute('INSERT INTO chat_log (username, role, content, session_id) VALUES (?, ?, ?, ?)', (st.session_state.username, "user", user_in, st.session_state.current_session)); conn.commit(); conn.close()
+    db_query('INSERT INTO chat_log (username, role, content, session_id) VALUES (?,?,?,?)', (st.session_state.username, "user", user_in, st.session_state.sid))
     with st.chat_message("user"): st.markdown(user_in)
-
     with st.chat_message("assistant"):
-        m_id = "llama-3.2-11b-vision-instruct" if up else "llama-3.3-70b-versatile"
-        sys_p = f"You are {persona} in {lang}. GLOBAL CONTEXT: {prof['history_context']}. NOTES: {prof['ints']}. AI INSIGHT: {prof['sec']}"
-        res = client.chat.completions.create(model=m_id, messages=[{"role":"system","content":sys_p}]+st.session_state.messages)
-        ans = res.choices[0].message.content
-        st.markdown(ans)
+        mid = "llama-3.2-11b-vision-instruct" if up else "llama-3.3-70b-versatile"
+        sys = f"You are {persona}. Global Context: {mem['c']}. Personality: {mem['i']}. AI Summary: {mem['s']}"
+        res = client.chat.completions.create(model=mid, messages=[{"role":"system","content":sys}]+st.session_state.messages)
+        ans = res.choices[0].message.content; st.markdown(ans)
         st.session_state.messages.append({"role": "assistant", "content": ans})
-        conn = sqlite3.connect('vison_user_data.db'); conn.cursor().execute('INSERT INTO chat_log (username, role, content, session_id) VALUES (?, ?, ?, ?)', (st.session_state.username, "assistant", ans, st.session_state.current_session)); conn.commit(); conn.close()
+        db_query('INSERT INTO chat_log (username, role, content, session_id) VALUES (?,?,?,?)', (st.session_state.username, "assistant", ans, st.session_state.sid))
 
-# --- PART 8: AUTO-SCROLL ---
+# --- PART 8: SCROLL ---
 components.html("<script>window.parent.document.querySelectorAll('.stChatMessage').forEach(el => el.scrollIntoView({behavior:'smooth'}));</script>", height=0)
