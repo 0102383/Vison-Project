@@ -1,6 +1,9 @@
 streamlit
 groq
 fpdf
+matplotlib
+numpy
+
 
 
 
