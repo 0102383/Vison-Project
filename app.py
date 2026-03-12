@@ -215,5 +215,61 @@ if user_input:
                     save_message(st.session_state.username, "assistant", ans)
                 except Exception as e:
                     st.error(f"Error: {e}")
+# --- 8. CHAT LOGIC (70B UPGRADE + TOKEN COUNTER) ---
+st.markdown('<p class="main-title">VISON AI CORE</p>', unsafe_allow_html=True)
+
+# Load memory
+if "messages" not in st.session_state: 
+    conn = sqlite3.connect('vison_user_data.db')
+    data = conn.cursor().execute('SELECT role, content FROM chat_log WHERE username=? ORDER BY id ASC', (st.session_state.username,)).fetchall()
+    st.session_state.messages = [{"role": r, "content": c} for r, c in data]
+
+# Display history
+for msg in st.session_state.messages:
+    # Use your custom glowing AI image for the avatar!
+    avatar_img = f"data:image/jpeg;base64,{ai_avatar_b64}" if msg["role"] == "assistant" and ai_avatar_b64 else "👤"
+    with st.chat_message(msg["role"], avatar=avatar_img):
+        st.markdown(msg["content"])
+
+st.markdown("---")
+uploaded_file = st.file_uploader("➕ Add Image / Equation", type=['png', 'jpg', 'jpeg'])
+user_input = st.chat_input("Ask Vison anything...")
+
+if user_input:
+    st.session_state.messages.append({"role": "user", "content": user_input})
+    save_message(st.session_state.username, "user", user_input)
+    with st.chat_message("user", avatar="👤"):
+        st.markdown(user_input)
+
+    with st.chat_message("assistant", avatar=f"data:image/jpeg;base64,{ai_avatar_b64}" if ai_avatar_b64 else None):
+        try:
+            from groq import Groq
+            client = Groq(api_key=st.secrets["GROQ_API_KEY"])
+            
+            # MODEL SELECTION
+            # Text = 70B Versatile | Image = 11B Vision
+            model_id = "llama-3.2-11b-vision-preview" if uploaded_file else "llama-3.3-70b-versatile"
+            
+            math_text = "Use LaTeX $$ for equations." if math_mode else ""
+            sys_m = f"You are {persona} in {lang}. Level: {new_level}. Interests: {new_ints}. {math_text}"
+            
+            # API CALL
+            res = client.chat.completions.create(
+                model=model_id, 
+                messages=[{"role": "system", "content": sys_m}] + st.session_state.messages
+            )
+            
+            ans = res.choices[0].message.content
+            st.markdown(ans)
+            
+            # --- TOKEN COUNTER BADGE ---
+            tokens = res.usage.total_tokens
+            st.caption(f"⚙️ **Engine:** {model_id} | 🧠 **Brain Power Used:** {tokens} tokens")
+            
+            st.session_state.messages.append({"role": "assistant", "content": ans})
+            save_message(st.session_state.username, "assistant", ans)
+            
+        except Exception as e:
+            st.error(f"Error: {e}")
 
 
