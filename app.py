@@ -306,3 +306,29 @@ if user_input:
                 )
                 ans = res.choices[0].message.content
                 st.markdown(ans)
+                
+                tokens = res.usage.total_tokens
+                st.caption(f"⚙️ **Model:** {model_id} | 🧠 **Tokens:** {tokens}")
+                
+                st.session_state.messages.append({"role": "assistant", "content": ans})
+                save_message(st.session_state.username, "assistant", ans, st.session_state.current_session)
+            
+            # This is the exact part Python was crying about!
+            except Exception as e:
+                st.error(f"Error: {e}")
+
+# --- 8. AUTO-SCROLL TO BOTTOM JAVASCRIPT ---
+components.html(
+    """
+    <script>
+        function scrollToBottom() {
+            var chatElements = window.parent.document.querySelectorAll('.stChatMessage');
+            if (chatElements.length > 0) {
+                chatElements[chatElements.length - 1].scrollIntoView({ behavior: 'smooth' });
+            }
+        }
+        setTimeout(scrollToBottom, 300);
+    </script>
+    """,
+    height=0,
+)
