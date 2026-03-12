@@ -10,7 +10,7 @@ from fpdf import FPDF
 # --- ⚙️ MASTER SETTINGS ⚙️ ---
 LOGO_FILENAME = "vison_logo.jpg" 
 AI_AVATAR_FILENAME = "ai_logo_glow.jpg"
-ADMIN_USERNAME = "0102383" # 👑 ONLY THIS USERNAME CAN SEE THE SECRET DATA!
+ADMIN_USERNAME = "0102383" 
 
 # --- 1. SAFE LIBRARY IMPORT ---
 client = None
@@ -25,19 +25,9 @@ except ImportError:
 def init_db():
     conn = sqlite3.connect('vison_user_data.db')
     c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS users (username TEXT PRIMARY KEY, password TEXT, interests TEXT, level TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS users (username TEXT PRIMARY KEY, password TEXT, interests TEXT, level TEXT, secret_profile TEXT DEFAULT 'No data yet.')''')
     c.execute('''CREATE TABLE IF NOT EXISTS chat_log (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, role TEXT, content TEXT, session_id TEXT DEFAULT 'default')''')
     c.execute('''CREATE TABLE IF NOT EXISTS chat_sessions (session_id TEXT PRIMARY KEY, username TEXT, session_name TEXT)''')
-    
-    try: c.execute("ALTER TABLE users ADD COLUMN interests TEXT")
-    except: pass
-    try: c.execute("ALTER TABLE users ADD COLUMN level TEXT")
-    except: pass
-    try: c.execute("ALTER TABLE chat_log ADD COLUMN session_id TEXT DEFAULT 'default'")
-    except: pass
-    try: c.execute("ALTER TABLE users ADD COLUMN secret_profile TEXT DEFAULT 'No data yet.'")
-    except: pass
-        
     conn.commit()
     conn.close()
 
@@ -47,7 +37,7 @@ def manage_user(username, password):
     c.execute('SELECT password FROM users WHERE username=?', (username,))
     row = c.fetchone()
     if row is None:
-        c.execute('INSERT INTO users (username, password, interests, level) VALUES (?, ?, ?, ?)', (username, password, "", "High School"))
+        c.execute('INSERT INTO users (username, password, interests, level) VALUES (?, ?, ?, ?)', (username, password, "General", "High School"))
         conn.commit()
         conn.close()
         return "registered"
@@ -75,9 +65,8 @@ def get_profile(u):
     res = conn.cursor().execute('SELECT interests, level, secret_profile FROM users WHERE username=?', (u,)).fetchone()
     conn.close()
     if res:
-        secret = res[2] if len(res) > 2 and res[2] else "No data yet."
-        return {"interests": res[0] or "STEM", "level": res[1] or "High School", "secret": secret}
-    return {"interests": "STEM", "level": "High School", "secret": "No data yet."}
+        return {"interests": res[0] or "General", "level": res[1] or "High School", "secret": res[2] or "No data yet."}
+    return {"interests": "General", "level": "High School", "secret": "No data yet."}
 
 def save_message(u, r, c, s_id):
     conn = sqlite3.connect('vison_user_data.db')
@@ -91,17 +80,6 @@ def load_memory(u, s_id):
     conn.close()
     return [{"role": r, "content": c} for r, c in data]
 
-def create_pdf(history):
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", 'B', 16)
-    pdf.cell(200, 10, txt="VISON AI - Study Session", ln=True, align='C')
-    pdf.set_font("Arial", size=11)
-    for m in history:
-        role = "YOU" if m['role'] == "user" else "VISON AI"
-        pdf.multi_cell(0, 8, txt=f"\n{role}: {m['content']}")
-    return pdf.output(dest='S').encode('latin-1')
-
 def get_image_base64(image_path):
     if os.path.exists(image_path):
         with open(image_path, "rb") as img_file:
@@ -114,200 +92,131 @@ def get_all_users_data():
     conn.close()
     return data
 
+def run_auto_brain(username, messages):
+    if client and len(messages) > 1:
+        try:
+            user_texts = [m["content"] for m in messages if m["role"] == "user"][-5:]
+            joined = " | ".join(user_texts)
+            # 1. Topics
+            res1 = client.chat.completions.create(model="llama-3.1-8b-instant", messages=[{"role": "user", "content": f"Extract 3 study keywords: {joined}"}])
+            ints = res1.choices[0].message.content.strip()
+            # 2. Psychology
+            res2 = client.chat.completions.create(model="llama-3.1-8b-instant", messages=[{"role": "user", "content": f"Write a 1-sentence psychological profile of this student based on: {joined}"}])
+            sec = res2.choices[0].message.content.strip()
+            save_profile(username, ints, "High School")
+            save_secret_profile(username, sec)
+            return True
+        except: return False
+    return False
+
 init_db()
 ai_avatar_b64 = get_image_base64(AI_AVATAR_FILENAME)
 
-# --- 3. UI SETUP ---
+# --- 3. UI ---
 st.set_page_config(page_title="VISON AI", page_icon="🚀", layout="wide")
-st.markdown("""
-    <style>
-    .main-title { font-size: 50px; font-weight: 800; background: -webkit-linear-gradient(#a252ff, #0072ff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-align: center; }
-    div[data-testid="stChatMessage"]:has(span[aria-label="User Avatar icon"]) { flex-direction: row-reverse !important; text-align: right !important; }
-    div[data-testid="stChatMessage"]:has(span[aria-label="User Avatar icon"]) > div { background-color: rgba(162, 82, 255, 0.1) !important; border: 1px solid #a252ff !important; border-radius: 15px !important; }
-    div[data-testid="stChatMessage"]:has(img[data-testid="stChatMessageAvatarImage"]) > div { background-color: rgba(0, 114, 255, 0.1) !important; border: 1px solid #0072ff !important; border-radius: 15px !important; }
-    </style>
-    """, unsafe_allow_html=True)
+st.markdown("<style>.main-title { font-size: 50px; font-weight: 800; background: -webkit-linear-gradient(#a252ff, #0072ff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-align: center; }</style>", unsafe_allow_html=True)
 
-# --- 4. LOGIN ---
-if 'logged_in' not in st.session_state: 
-    st.session_state.logged_in = False
-
+if 'logged_in' not in st.session_state: st.session_state.logged_in = False
 if not st.session_state.logged_in:
     logo_b64 = get_image_base64(LOGO_FILENAME)
-    if logo_b64: 
-        st.markdown(f'<center><img src="data:image/jpeg;base64,{logo_b64}" width="300"></center>', unsafe_allow_html=True)
-    
-    cols = st.columns([1, 2, 1])
-    with cols[1]:
-        u = st.text_input("Username")
-        p = st.text_input("Password", type="password")
-        if st.button("Unlock AI"):
-            if manage_user(u.lower().strip(), p) in ["registered", "authorized"]:
-                st.session_state.logged_in = True
-                st.session_state.username = u.lower().strip()
-                st.rerun()
+    if logo_b64: st.markdown(f'<center><img src="data:image/jpeg;base64,{logo_b64}" width="300"></center>', unsafe_allow_html=True)
+    cols = st.columns([1, 2, 1]); u = cols[1].text_input("Username"); p = cols[1].text_input("Password", type="password")
+    if cols[1].button("Unlock AI"):
+        if manage_user(u.lower().strip(), p) in ["registered", "authorized"]:
+            st.session_state.logged_in = True; st.session_state.username = u.lower().strip(); st.rerun()
     st.stop()
 
-# --- 5. CHAT SESSIONS & AUTO-LEARN LOGIC ---
+# --- 4. SESSIONS ---
 conn = sqlite3.connect('vison_user_data.db')
 c = conn.cursor()
 c.execute('SELECT DISTINCT session_id FROM chat_log WHERE username=?', (st.session_state.username,))
 db_sessions = [row[0] for row in c.fetchall() if row[0] is not None]
-c.execute('SELECT session_id, session_name FROM chat_sessions WHERE username=?', (st.session_state.username,))
-session_names = {row[0]: row[1] for row in c.fetchall()}
 conn.close()
 
 if "current_session" not in st.session_state:
     st.session_state.current_session = db_sessions[-1] if db_sessions else str(uuid.uuid4())
-if st.session_state.current_session not in db_sessions:
-    db_sessions.append(st.session_state.current_session)
+if st.session_state.current_session not in db_sessions: db_sessions.append(st.session_state.current_session)
 
-def format_session_name(s_id):
-    return session_names[s_id] if s_id in session_names else f"Chat ({s_id[:6]})" 
-
-if "last_learn_time" not in st.session_state:
-    st.session_state.last_learn_time = time.time()
-
-# 🧠 THE EMOTIONAL AUTO-BRAIN
-if time.time() - st.session_state.last_learn_time > 3600:  
-    if client and "messages" in st.session_state and len(st.session_state.messages) > 2:
-        try:
-            recent_texts = [m["content"] for m in st.session_state.messages if m["role"] == "user"][-8:]
-            joined_texts = ' | '.join(recent_texts)
-            res_topics = client.chat.completions.create(model="llama-3.1-8b-instant", messages=[{"role": "user", "content": f"Return 3-4 comma-separated study keywords for: {joined_texts}"}])
-            inferred_interests = res_topics.choices[0].message.content.replace('"', '').strip()
-            res_emotion = client.chat.completions.create(model="llama-3.1-8b-instant", messages=[{"role": "user", "content": f"Write a 2-sentence student profile for: {joined_texts}"}])
-            inferred_emotion = res_emotion.choices[0].message.content.strip()
-            old_prof = get_profile(st.session_state.username)
-            save_profile(st.session_state.username, inferred_interests, old_prof["level"])
-            save_secret_profile(st.session_state.username, inferred_emotion)
-            st.toast("🧠 VISON updated your study profile!")
-        except: pass
-    st.session_state.last_learn_time = time.time()
-
-# --- 6. SIDEBAR ---
+# --- 5. SIDEBAR ---
 with st.sidebar:
     st.markdown(f"### 👤 {st.session_state.username}")
-    if st.button("🚪 Logout", use_container_width=True):
-        st.session_state.clear()
-        st.rerun()
+    if st.button("🚪 Logout", use_container_width=True): st.session_state.clear(); st.rerun()
     st.markdown("---")
     
     st.subheader("📁 Chat History")
     if st.button("➕ New Chat"):
-        st.session_state.current_session = str(uuid.uuid4())
-        st.session_state.messages = []
-        st.session_state.quiz_mode = False
-        st.rerun()
-        
-    reversed_sessions = db_sessions[::-1]
-    selected_session = st.selectbox("Jump to past chat:", reversed_sessions, format_func=format_session_name, index=reversed_sessions.index(st.session_state.current_session))
-    if selected_session != st.session_state.current_session:
-        st.session_state.current_session = selected_session
-        st.session_state.messages = load_memory(st.session_state.username, selected_session)
-        st.session_state.quiz_mode = False
-        st.rerun()
-        
-    with st.expander("✏️ Rename Current Chat"):
-        new_name_input = st.text_input("New Name", value=format_session_name(st.session_state.current_session), label_visibility="collapsed")
-        if st.button("💾 Save Name", use_container_width=True):
-            conn = sqlite3.connect('vison_user_data.db')
-            conn.cursor().execute('INSERT OR REPLACE INTO chat_sessions (session_id, username, session_name) VALUES (?, ?, ?)', (st.session_state.current_session, st.session_state.username, new_name_input))
-            conn.commit()
-            conn.close()
-            st.success("Renamed!")
-            time.sleep(0.5)
-            st.rerun()
-            
+        st.session_state.current_session = str(uuid.uuid4()); st.session_state.messages = []; st.rerun()
+    
+    sel_session = st.selectbox("Past Chats:", db_sessions[::-1], index=0)
+    if sel_session != st.session_state.current_session:
+        st.session_state.current_session = sel_session; st.session_state.messages = load_memory(st.session_state.username, sel_session); st.rerun()
+
     st.markdown("---")
     st.subheader("📝 Quick Quiz")
-    with st.expander("Setup & Start Quiz"):
-        quiz_country = st.text_input("Country", value="Malaysia") 
-        quiz_grade = st.selectbox("Grade / Form", ["Form 1", "Form 2", "Form 3", "Form 4", "Form 5", "Primary School", "University"])
-        quiz_subject = st.text_input("Subject", value="Math & STEM")
-        quiz_questions = st.number_input("Questions", min_value=1, max_value=20, value=3)
-        quiz_timer = st.number_input("Timer (Secs)", min_value=10, max_value=300, value=30)
-        if st.button("🚀 Start Quiz!", use_container_width=True):
+    with st.expander("Start Quiz"):
+        subj = st.text_input("Subject", "Math")
+        if st.button("🚀 Go"):
             st.session_state.quiz_mode = True
-            st.session_state.quiz_time_limit = quiz_timer
-            st.session_state.pending_prompt = f"Give me a {quiz_questions}-question {quiz_subject} quiz for {quiz_grade} in {quiz_country}. Ask one by one. I have {quiz_timer}s per question."
+            st.session_state.pending_prompt = f"Give me a 3-question {subj} quiz. Ask one by one."
             st.rerun()
-    
-    if st.session_state.get("quiz_mode") and st.button("🛑 Stop Quiz", use_container_width=True):
-        st.session_state.quiz_mode = False
-        st.rerun()
-            
+
     st.markdown("---")
     st.subheader("⏱️ Focus Timer")
-    minutes = st.number_input("Set Minutes", min_value=1, max_value=60, value=25)
+    mins = st.number_input("Minutes", 1, 60, 25)
     if st.button("Start Timer"):
         ph = st.empty()
-        for i in range(minutes * 60, 0, -1):
-            mins, secs = divmod(i, 60)
-            ph.metric("Time Left", f"{mins:02d}:{secs:02d}")
-            time.sleep(1)
+        for i in range(mins*60, 0, -1):
+            m, s = divmod(i, 60); ph.metric("Focusing...", f"{m:02d}:{s:02d}"); time.sleep(1)
         st.balloons()
-    
-    st.markdown("---")
-    math_mode = st.toggle("📐 Math Mode", value=True)
-    profile = get_profile(st.session_state.username)
-    new_ints = st.text_area("🧠 Interests", value=profile["interests"])
-    new_level = st.selectbox("🎓 Level", ["Primary School", "High School", "University"], index=1)
-    if st.button("Update Memory"):
-        save_profile(st.session_state.username, new_ints, new_level)
-        st.success("Updated!")
-    
-    persona = st.selectbox("Persona", ["Friendly Mentor", "Quirky Scientist", "Casual Buddy"])
-    lang = st.selectbox("Language", ["English", "Bahasa Melayu", "Japanese"])
 
-    if st.button("📄 Save PDF"):
-        pdf_bytes = create_pdf(load_memory(st.session_state.username, st.session_state.current_session))
-        st.download_button("📥 Download", pdf_bytes, "vison_notes.pdf")
+    st.markdown("---")
+    math_mode = st.toggle("📐 Math Mode", True)
+    prof = get_profile(st.session_state.username)
+    persona = st.selectbox("Persona", ["Friendly Mentor", "Quirky Scientist", "Strict Professor", "Casual Buddy"])
+    lang = st.selectbox("Language", ["English", "Bahasa Melayu"])
 
     if st.session_state.username == ADMIN_USERNAME:
         st.markdown("---")
-        with st.expander("🕵️ Admin Vault"):
+        with st.expander("🕵️ VISON Vault 2.1"):
+            if st.button("🔄 Force Sync AI Analytics"):
+                if run_auto_brain(st.session_state.username, st.session_state.get('messages', [])):
+                    st.success("Vault Updated!")
+                    time.sleep(1)
+                    st.rerun()
             for u_n, u_i, u_s in get_all_users_data():
-                st.write(f"**{u_n}**: {u_i} | *{u_s}*")
+                st.markdown(f"**{u_n}**")
+                st.caption(f"Topic: {u_i}")
+                st.info(u_s)
+                st.divider()
 
-# --- 7. MAIN CHAT INTERFACE ---
+# --- 6. CHAT ---
 st.markdown('<p class="main-title">🚀 VISON AI CORE</p>', unsafe_allow_html=True)
-if "messages" not in st.session_state: 
-    st.session_state.messages = load_memory(st.session_state.username, st.session_state.current_session)
+if "messages" not in st.session_state: st.session_state.messages = load_memory(st.session_state.username, st.session_state.current_session)
 
-for msg in st.session_state.messages:
-    av = f"data:image/jpeg;base64,{ai_avatar_b64}" if msg["role"] == "assistant" and ai_avatar_b64 else "👤"
-    with st.chat_message(msg["role"], avatar=av): st.markdown(msg["content"])
+for m in st.session_state.messages:
+    av = f"data:image/jpeg;base64,{ai_avatar_b64}" if m["role"] == "assistant" and ai_avatar_b64 else "👤"
+    with st.chat_message(m["role"], avatar=av): st.markdown(m["content"])
 
-uploaded_file = st.file_uploader("➕ Add Image", type=['png', 'jpg', 'jpeg'], key="vison_up")
-user_input = st.chat_input("Ask Vison...")
+up_file = st.file_uploader("➕ Image", type=['png', 'jpg', 'jpeg'], key="vup")
+user_in = st.chat_input("Ask Vison...")
 
 if st.session_state.get("pending_prompt"):
-    user_input = st.session_state.pending_prompt
-    st.session_state.pending_prompt = None
+    user_in = st.session_state.pending_prompt; st.session_state.pending_prompt = None
 
-if user_input:
-    time_note = ""
-    if st.session_state.get("quiz_mode") and "last_ai_time" in st.session_state:
-        elapsed = int(time.time() - st.session_state.last_ai_time)
-        time_note = f"\n\n[System: Student took {elapsed}s]"
-
-    st.session_state.messages.append({"role": "user", "content": user_input})
-    save_message(st.session_state.username, "user", user_input, st.session_state.current_session)
-    with st.chat_message("user", avatar="👤"): st.markdown(user_input)
+if user_in:
+    st.session_state.messages.append({"role": "user", "content": user_in})
+    save_message(st.session_state.username, "user", user_in, st.session_state.current_session)
+    with st.chat_message("user", avatar="👤"): st.markdown(user_in)
 
     with st.chat_message("assistant", avatar=f"data:image/jpeg;base64,{ai_avatar_b64}" if ai_avatar_b64 else "🤖"):
-        if client:
-            try:
-                model_id = "llama-3.2-11b-vision-instruct" if uploaded_file else "llama-3.3-70b-versatile"
-                sys_m = f"You are {persona} in {lang}. {profile['secret']}"
-                res = client.chat.completions.create(model=model_id, messages=[{"role": "system", "content": sys_m}] + st.session_state.messages)
-                ans = res.choices[0].message.content
-                st.markdown(ans)
-                st.session_state.last_ai_time = time.time()
-                st.session_state.messages.append({"role": "assistant", "content": ans})
-                save_message(st.session_state.username, "assistant", ans, st.session_state.current_session)
-            except Exception as e: st.error(f"Error: {e}")
+        try:
+            m_id = "llama-3.2-11b-vision-instruct" if up_file else "llama-3.3-70b-versatile"
+            sys_m = f"You are {persona} in {lang}. {prof['secret']}. {'Use LaTeX $$' if math_mode else ''}"
+            res = client.chat.completions.create(model=m_id, messages=[{"role": "system", "content": sys_m}] + st.session_state.messages)
+            ans = res.choices[0].message.content
+            st.markdown(ans)
+            st.session_state.messages.append({"role": "assistant", "content": ans})
+            save_message(st.session_state.username, "assistant", ans, st.session_state.current_session)
+        except Exception as e: st.error(f"Error: {e}")
 
 components.html("<script>window.parent.document.querySelectorAll('.stChatMessage').forEach(el => el.scrollIntoView({behavior:'smooth'}));</script>", height=0)
-
