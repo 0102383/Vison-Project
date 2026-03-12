@@ -7,8 +7,8 @@ from fpdf import FPDF
 import io
 
 # --- ⚙️ MASTER SETTINGS ⚙️ ---
-LOGO_FILENAME = "vison_logo.jpg.png" 
-AI_AVATAR_FILENAME = "ai_logo_glow.png"
+LOGO_FILENAME = "vison_logo.jpg" 
+AI_AVATAR_FILENAME = "ai_logo_glow.jpg"
 
 # --- 1. DATABASE & AUTH ---
 def init_db():
@@ -134,3 +134,4 @@ if user_input:
             save_message(st.session_state.username, "assistant", ans)
         except Exception as e:
             st.error(f"Error: {e}")
+
