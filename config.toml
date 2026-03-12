@@ -1,19 +1,6 @@
 [theme]
-# Forces the entire app into Dark Mode
 base="dark"
-
-# Your VISON neon purple accent color (affects buttons, upload borders, etc.)
 primaryColor="#a252ff"
-
-# The main background color (Space Dark)
 backgroundColor="#0e1117"
-
-# The Sidebar and Input Box background color (Pitch Black)
 secondaryBackgroundColor="#000000"
-
-# Forces all text to be pure white
 textColor="#ffffff"
-
-[server]
-# Optional: Hides the default Streamlit menu for a cleaner look
-toolbarMode = "minimal"
