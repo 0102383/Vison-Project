@@ -9,7 +9,7 @@ from fpdf import FPDF
 
 # --- ⚙️ MASTER SETTINGS ⚙️ ---
 LOGO_FILENAME = "vison_logo.jpg" 
-AI_AVATAR_FILENAME = "ai_logo_glow.jpg" 
+AI_AVATAR_FILENAME = "ai_logo_glow.jpg"
 
 # --- 1. SAFE LIBRARY IMPORT ---
 client = None
@@ -28,12 +28,21 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS chat_log (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, role TEXT, content TEXT, session_id TEXT DEFAULT 'default')''')
     c.execute('''CREATE TABLE IF NOT EXISTS chat_sessions (session_id TEXT PRIMARY KEY, username TEXT, session_name TEXT)''')
     
-    try: c.execute("ALTER TABLE users ADD COLUMN interests TEXT")
-    except: pass
-    try: c.execute("ALTER TABLE users ADD COLUMN level TEXT")
-    except: pass
-    try: c.execute("ALTER TABLE chat_log ADD COLUMN session_id TEXT DEFAULT 'default'")
-    except: pass
+    try: 
+        c.execute("ALTER TABLE users ADD COLUMN interests TEXT")
+    except: 
+        pass
+    
+    try: 
+        c.execute("ALTER TABLE users ADD COLUMN level TEXT")
+    except: 
+        pass
+        
+    try: 
+        c.execute("ALTER TABLE chat_log ADD COLUMN session_id TEXT DEFAULT 'default'")
+    except: 
+        pass
+        
     conn.commit()
     conn.close()
 
@@ -110,10 +119,13 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # --- 4. LOGIN ---
-if 'logged_in' not in st.session_state: st.session_state.logged_in = False
+if 'logged_in' not in st.session_state: 
+    st.session_state.logged_in = False
+
 if not st.session_state.logged_in:
     logo_b64 = get_image_base64(LOGO_FILENAME)
-    if logo_b64: st.markdown(f'<center><img src="data:image/jpeg;base64,{logo_b64}" width="300"></center>', unsafe_allow_html=True)
+    if logo_b64: 
+        st.markdown(f'<center><img src="data:image/jpeg;base64,{logo_b64}" width="300"></center>', unsafe_allow_html=True)
     
     cols = st.columns([1, 2, 1])
     with cols[1]:
@@ -138,4 +150,24 @@ session_names = {row[0]: row[1] for row in c.fetchall()}
 conn.close()
 
 if "current_session" not in st.session_state:
+    if db_sessions:
+        st.session_state.current_session = db_sessions[-1]
+    else:
+        st.session_state.current_session = str(uuid.uuid4())
 
+if st.session_state.current_session not in db_sessions:
+    db_sessions.append(st.session_state.current_session)
+
+def format_session_name(s_id):
+    if s_id in session_names:
+        return session_names[s_id]
+    return f"Chat ({s_id[:6]})" 
+
+if "last_learn_time" not in st.session_state:
+    st.session_state.last_learn_time = time.time()
+
+if time.time() - st.session_state.last_learn_time > 3600:
+    if client and "messages" in st.session_state and len(st.session_state.messages) > 2:
+        try:
+            recent_texts = [m["content"] for m in st.session_state.messages if m["role"] == "user"][-5:]
+            prompt = f"Based on
