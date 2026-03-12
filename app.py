@@ -6,7 +6,7 @@ import os
 # Type the EXACT name of your main vison logo file on GitHub here:
 LOGO_FILENAME = "vison_logo.jpg.png" 
 # Name of the glowing AI logo for chat avatars:
-AI_AVATAR_FILENAME = "ai_glow.jpg"
+AI_AVATAR_FILENAME = "ai_logo_glow.jpg"
 
 # --- 1. SAFE LIBRARY IMPORT ---
 GROQ_AVAILABLE = False
@@ -282,6 +282,7 @@ if user_input:
                     st.session_state.messages.append({"role": "assistant", "content": ans})
                     save_message(st.session_state.username, "assistant", ans)
                 except Exception as e: st.error(f"Error: {e}")
+
 
 
 
