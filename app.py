@@ -3,30 +3,34 @@ import sqlite3
 import base64
 import os
 import time
+import uuid
+import streamlit.components.v1 as components
 from fpdf import FPDF
 
 # --- ⚙️ MASTER SETTINGS ⚙️ ---
-# Make sure this matches your uploaded GitHub file exactly!
-LOGO_FILENAME = "vison_logo.jpg" 
-AI_AVATAR_FILENAME = "ai_logo_glow.jpg"
+LOGO_FILENAME = "vison_logo.jpg.png" 
+AI_AVATAR_FILENAME = "image_3b899c.jpg" # Make sure this matches your exact file name!
 
 # --- 1. SAFE LIBRARY IMPORT ---
-GROQ_AVAILABLE = False
+client = None
 try:
     from groq import Groq
-    GROQ_AVAILABLE = True
+    if "GROQ_API_KEY" in st.secrets:
+        client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 except ImportError:
     st.error("🚀 Please add `groq` to your `requirements.txt`!")
 
-# --- 2. DATABASE & AUTH ---
+# --- 2. DATABASE & SESSIONS ---
 def init_db():
     conn = sqlite3.connect('vison_user_data.db')
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS users (username TEXT PRIMARY KEY, password TEXT, interests TEXT, level TEXT)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS chat_log (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, role TEXT, content TEXT)''')
-    try:
-        c.execute("ALTER TABLE users ADD COLUMN interests TEXT")
-        c.execute("ALTER TABLE users ADD COLUMN level TEXT")
+    c.execute('''CREATE TABLE IF NOT EXISTS chat_log (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, role TEXT, content TEXT, session_id TEXT DEFAULT 'default')''')
+    try: c.execute("ALTER TABLE users ADD COLUMN interests TEXT")
+    except: pass
+    try: c.execute("ALTER TABLE users ADD COLUMN level TEXT")
+    except: pass
+    try: c.execute("ALTER TABLE chat_log ADD COLUMN session_id TEXT DEFAULT 'default'")
     except: pass
     conn.commit()
     conn.close()
@@ -60,19 +64,18 @@ def get_profile(u):
     conn.close()
     return {"interests": res[0] or "STEM", "level": res[1] or "High School"} if res else {"interests": "STEM", "level": "High School"}
 
-def save_message(u, r, c):
+def save_message(u, r, c, s_id):
     conn = sqlite3.connect('vison_user_data.db')
-    conn.cursor().execute('INSERT INTO chat_log (username, role, content) VALUES (?, ?, ?)', (u, r, str(c)))
+    conn.cursor().execute('INSERT INTO chat_log (username, role, content, session_id) VALUES (?, ?, ?, ?)', (u, r, str(c), str(s_id)))
     conn.commit()
     conn.close()
 
-def load_memory(u):
+def load_memory(u, s_id):
     conn = sqlite3.connect('vison_user_data.db')
-    data = conn.cursor().execute('SELECT role, content FROM chat_log WHERE username=? ORDER BY id ASC', (u,)).fetchall()
+    data = conn.cursor().execute('SELECT role, content FROM chat_log WHERE username=? AND session_id=? ORDER BY id ASC', (u, s_id)).fetchall()
     conn.close()
     return [{"role": r, "content": c} for r, c in data]
 
-# --- 3. PDF GENERATOR ---
 def create_pdf(history):
     pdf = FPDF()
     pdf.add_page()
@@ -93,7 +96,7 @@ def get_image_base64(image_path):
 init_db()
 ai_avatar_b64 = get_image_base64(AI_AVATAR_FILENAME)
 
-# --- 4. UI SETUP & CSS ---
+# --- 3. UI SETUP ---
 st.set_page_config(page_title="VISON AI", page_icon="🚀", layout="wide")
 st.markdown("""
     <style>
@@ -104,7 +107,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 5. LOGIN ---
+# --- 4. LOGIN ---
 if 'logged_in' not in st.session_state: st.session_state.logged_in = False
 if not st.session_state.logged_in:
     logo_b64 = get_image_base64(LOGO_FILENAME)
@@ -121,11 +124,56 @@ if not st.session_state.logged_in:
                 st.rerun()
     st.stop()
 
-# --- 6. SIDEBAR (TIMER, PROFILE, SETTINGS) ---
+# --- 5. CHAT SESSIONS & AUTO-LEARN LOGIC ---
+conn = sqlite3.connect('vison_user_data.db')
+c = conn.cursor()
+c.execute('SELECT DISTINCT session_id FROM chat_log WHERE username=?', (st.session_state.username,))
+db_sessions = [row[0] for row in c.fetchall() if row[0] is not None]
+conn.close()
+
+if "current_session" not in st.session_state:
+    if db_sessions:
+        st.session_state.current_session = db_sessions[-1]
+    else:
+        st.session_state.current_session = str(uuid.uuid4())
+        db_sessions.append(st.session_state.current_session)
+
+# The 1-Hour Auto-Brain (Every 3600 seconds)
+if "last_learn_time" not in st.session_state:
+    st.session_state.last_learn_time = time.time()
+
+if time.time() - st.session_state.last_learn_time > 3600:
+    if client and "messages" in st.session_state and len(st.session_state.messages) > 2:
+        try:
+            recent_texts = [m["content"] for m in st.session_state.messages if m["role"] == "user"][-5:]
+            prompt = f"Based on these messages, what is this student studying? Return ONLY 3-4 comma-separated keywords: {' | '.join(recent_texts)}"
+            res = client.chat.completions.create(model="llama-3.1-8b-instant", messages=[{"role": "user", "content": prompt}])
+            inferred_interests = res.choices[0].message.content.replace('"', '').strip()
+            
+            old_prof = get_profile(st.session_state.username)
+            save_profile(st.session_state.username, inferred_interests, old_prof["level"])
+            st.toast("🧠 VISON automatically learned from your last hour of study!")
+        except: pass
+    st.session_state.last_learn_time = time.time()
+
+# --- 6. SIDEBAR ---
 with st.sidebar:
     st.markdown(f"### 👤 {st.session_state.username}")
     
-    # Study Timer
+    st.subheader("📁 Chat History")
+    if st.button("➕ New Chat"):
+        st.session_state.current_session = str(uuid.uuid4())
+        st.session_state.messages = []
+        st.rerun()
+        
+    if db_sessions:
+        selected_session = st.selectbox("Jump to past chat:", reversed(db_sessions), index=0 if st.session_state.current_session not in db_sessions else db_sessions[::-1].index(st.session_state.current_session))
+        if selected_session != st.session_state.current_session:
+            st.session_state.current_session = selected_session
+            st.session_state.messages = load_memory(st.session_state.username, selected_session)
+            st.rerun()
+    
+    st.markdown("---")
     st.subheader("⏱️ Focus Timer")
     minutes = st.number_input("Set Minutes", min_value=1, max_value=60, value=25)
     if st.button("Start Session"):
@@ -138,7 +186,7 @@ with st.sidebar:
         st.success("Session Complete! Take a break.")
     
     st.markdown("---")
-    math_mode = st.toggle("📐 Math Mode (LaTeX)", value=True)
+    math_mode = st.toggle("📐 Math Mode", value=True)
     
     profile = get_profile(st.session_state.username)
     new_ints = st.text_area("🧠 Interests", value=profile["interests"])
@@ -148,29 +196,21 @@ with st.sidebar:
     if st.button("Update Memory"):
         save_profile(st.session_state.username, new_ints, new_level)
         st.success("Learned! 🚀")
-        
-    st.markdown("---")
-    persona = st.selectbox("Persona", ["Friendly Mentor", "Quirky Scientist", "Casual Chat Buddy"])
+    
+    # ADDED THE STRICT PROFESSOR HERE! 🎓
+    persona = st.selectbox("Persona", ["Friendly Mentor", "Quirky Scientist", "Strict Professor", "Casual Chat Buddy"])
     lang = st.selectbox("Language", ["English", "Bahasa Melayu", "Japanese"])
 
     if st.button("📄 Download PDF"):
-        pdf_bytes = create_pdf(load_memory(st.session_state.username))
+        pdf_bytes = create_pdf(load_memory(st.session_state.username, st.session_state.current_session))
         st.download_button("📥 Save Notes", pdf_bytes, "vison_notes.pdf", mime="application/pdf")
-        
-    if st.button("🗑️ Clear Chat"):
-        conn = sqlite3.connect('vison_user_data.db')
-        conn.cursor().execute('DELETE FROM chat_log WHERE username=?', (st.session_state.username,))
-        conn.commit()
-        st.session_state.messages = []
-        st.rerun()
 
 # --- 7. MAIN CHAT INTERFACE ---
 st.markdown('<p class="main-title">🚀 VISON AI CORE</p>', unsafe_allow_html=True)
 
 if "messages" not in st.session_state: 
-    st.session_state.messages = load_memory(st.session_state.username)
+    st.session_state.messages = load_memory(st.session_state.username, st.session_state.current_session)
 
-# Display Messages
 for msg in st.session_state.messages:
     if msg["role"] == "assistant":
         display_avatar = f"data:image/jpeg;base64,{ai_avatar_b64}" if ai_avatar_b64 else "🤖"
@@ -182,25 +222,19 @@ for msg in st.session_state.messages:
 
 st.markdown("---")
 
-# FIXED: Added key="vison_uploader_main" to prevent duplicate ID errors
 uploaded_file = st.file_uploader("➕ Add Image / Equation", type=['png', 'jpg', 'jpeg'], key="vison_uploader_main")
-
 user_input = st.chat_input("Ask Vison anything...")
 
 if user_input:
-    # 1. Show User Message
     st.session_state.messages.append({"role": "user", "content": user_input})
-    save_message(st.session_state.username, "user", user_input)
+    save_message(st.session_state.username, "user", user_input, st.session_state.current_session)
     with st.chat_message("user", avatar="👤"): 
         st.markdown(user_input)
 
-    # 2. Get AI Response
     with st.chat_message("assistant", avatar=f"data:image/jpeg;base64,{ai_avatar_b64}" if ai_avatar_b64 else "🤖"):
         if client:
             try:
-                # Text = 70B (super smart), Image = 11B Vision
                 model_id = "llama-3.2-11b-vision-preview" if uploaded_file else "llama-3.3-70b-versatile"
-                
                 math_text = "IMPORTANT: Use LaTeX (enclosed in $$) for all math." if math_mode else ""
                 sys_m = f"You are {persona} in {lang}. Level: {new_level}. Interests: {new_ints}. {math_text}"
                 
@@ -209,15 +243,28 @@ if user_input:
                     messages=[{"role": "system", "content": sys_m}] + st.session_state.messages
                 )
                 ans = res.choices[0].message.content
-                
                 st.markdown(ans)
                 
-                # Token counter badge
                 tokens = res.usage.total_tokens
                 st.caption(f"⚙️ **Model:** {model_id} | 🧠 **Tokens:** {tokens}")
                 
                 st.session_state.messages.append({"role": "assistant", "content": ans})
-                save_message(st.session_state.username, "assistant", ans)
-                
+                save_message(st.session_state.username, "assistant", ans, st.session_state.current_session)
             except Exception as e:
                 st.error(f"Error: {e}")
+
+# --- 8. AUTO-SCROLL TO BOTTOM JAVASCRIPT ---
+components.html(
+    """
+    <script>
+        function scrollToBottom() {
+            var chatElements = window.parent.document.querySelectorAll('.stChatMessage');
+            if (chatElements.length > 0) {
+                chatElements[chatElements.length - 1].scrollIntoView({ behavior: 'smooth' });
+            }
+        }
+        setTimeout(scrollToBottom, 300);
+    </script>
+    """,
+    height=0,
+)
