@@ -1,10 +1,12 @@
 import streamlit as st
 import sqlite3, base64, os, time, uuid, datetime
 import streamlit.components.v1 as components
+import matplotlib.pyplot as plt
+import numpy as np
 from fpdf import FPDF
 from groq import Groq
 
-# --- SETTINGS ---
+# --- PART 1: SETTINGS ---
 LOGO_FILENAME = "vison_logo.jpg"
 AI_AVATAR_FILENAME = "ai_logo_glow.jpg"
 ADMIN = "0102383"
@@ -14,6 +16,7 @@ def get_64(p):
         with open(p, "rb") as f: return base64.b64encode(f.read()).decode()
     return None
 
+# --- PART 2: DATABASE ---
 def db_q(q, d=(), fetch=False):
     conn = sqlite3.connect('vison_user_data.db')
     c = conn.cursor()
@@ -27,7 +30,25 @@ def init_db():
     db_q('''CREATE TABLE IF NOT EXISTS chat_log (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, role TEXT, content TEXT, session_id TEXT)''')
     db_q('''CREATE TABLE IF NOT EXISTS chat_sessions (session_id TEXT PRIMARY KEY, username TEXT, session_name TEXT, last_modified TEXT, mood_emoji TEXT DEFAULT '💬')''')
 
-# --- UI HELPERS ---
+# --- PART 3: SCIENTIFIC TOOLS (GRAPHER) ---
+def simple_plot(equation_str):
+    try:
+        x = np.linspace(-10, 10, 400)
+        # Clean string for python logic
+        safe_eq = equation_str.replace('^', '**').replace('sin', 'np.sin').replace('cos', 'np.cos').replace('tan', 'np.tan')
+        y = eval(safe_eq)
+        fig, ax = plt.subplots()
+        ax.plot(x, y, color='#a252ff', linewidth=2)
+        ax.axhline(0, color='white', linewidth=0.5)
+        ax.axvline(0, color='white', linewidth=0.5)
+        ax.set_facecolor('#0e1117')
+        fig.patch.set_facecolor('#0e1117')
+        ax.tick_params(colors='white')
+        ax.grid(True, linestyle='--', alpha=0.3)
+        return fig
+    except: return None
+
+# --- PART 4: UI HELPERS ---
 def get_mood_color(emoji):
     mood_map = {"🧠": "#00d4ff", "⚠️": "#ff4b4b", "🔥": "#ffaa00", "✅": "#00ff88", "💬": "#a252ff"}
     return mood_map.get(emoji, "#a252ff")
@@ -63,18 +84,37 @@ if not st.session_state.logged_in:
         if not res or res[0][0] == p: st.session_state.logged_in, st.session_state.username = True, u.lower(); st.rerun()
     st.stop()
 
-# --- SIDEBAR: RESTORED FEATURES ---
+# --- SIDEBAR: PRODUCTIVITY TOOLS ---
 with st.sidebar:
     st.title(f"🚀 {st.session_state.username.upper()}")
     if st.button("Logout"): st.session_state.clear(); st.rerun()
     st.divider()
     
-    # Restored Personas
+    # 🧠 MEMORY BUTTON
+    if st.button("🗑️ Clear Memory"):
+        db_q('DELETE FROM chat_log WHERE session_id=?', (st.session_state.sid,))
+        st.session_state.messages = []
+        st.success("Session Memory Wiped")
+        st.rerun()
+
+    # 📝 QUIZ BUTTON
+    if st.button("🧩 Generate Quiz"):
+        st.session_state.pending_quiz = True
+
+    # ⏱️ TIMER BUTTON
+    with st.expander("⏱️ Pomodoro Timer"):
+        t_min = st.number_input("Study Minutes:", 1, 120, 25)
+        if st.button("Start Timer"):
+            ph = st.empty()
+            for i in range(t_min * 60, 0, -1):
+                mins, secs = divmod(i, 60)
+                ph.metric("Focus Time", f"{mins:02d}:{secs:02d}")
+                time.sleep(1)
+            st.success("Focus Session Done!")
+
+    st.divider()
     persona = st.selectbox("Persona", ["Strict Professor", "Friendly Mentor", "Quirky Scientist"])
     lang = st.selectbox("Language", ["English", "Japanese", "Bahasa Melayu"])
-    
-    st.divider()
-    # Image Solver
     uploaded_file = st.file_uploader("📷 Solve STEM Equation", type=['png', 'jpg', 'jpeg'])
     
     st.divider()
@@ -86,7 +126,7 @@ with st.sidebar:
     
     if sessions:
         s_dict = {f"{s[3]} {s[1]}": s[0] for s in sessions}
-        sel = st.selectbox("Sessions:", list(s_dict.keys()))
+        sel = st.selectbox("History:", list(s_dict.keys()))
         st.session_state.sid = s_dict[sel]
         st.session_state.messages = [{"role":r, "content":c} for r,c in db_q('SELECT role, content FROM chat_log WHERE session_id=?', (st.session_state.sid,), True)]
 
@@ -99,42 +139,50 @@ for m in st.session_state.messages:
         st.markdown(m["content"])
 
 user_in = st.chat_input("Evolve your thinking...")
+
+# Auto-Trigger Quiz via button
+if st.session_state.get('pending_quiz'):
+    user_in = "Generate a 3-question STEM quiz based on our conversation. Use LaTeX."
+    st.session_state.pending_quiz = False
+
 if user_in or uploaded_file:
     client = Groq(api_key=st.secrets["GROQ_API_KEY"])
     
-    # Handle Image Analysis
-    image_payload = []
+    # Graphing Logic
+    if user_in and "plot" in user_in.lower():
+        eq = user_in.lower().split("plot")[-1].strip().replace("$", "")
+        fig = simple_plot(eq)
+        if fig: st.pyplot(fig)
+
+    # Standard Chat / Vision
+    model_to_use = "llama-3.2-11b-vision-preview" if uploaded_file else "llama-3.3-70b-versatile"
     display_text = user_in if user_in else "Analyze this image."
     
     if uploaded_file:
         img_b64 = base64.b64encode(uploaded_file.getvalue()).decode()
         image_payload = [{"type": "text", "text": display_text}, {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}}]
         with st.chat_message("user", avatar="👤"): st.image(uploaded_file, width=300); st.markdown(display_text)
+        content_payload = image_payload
     else:
         with st.chat_message("user", avatar="👤"): st.markdown(user_in)
+        content_payload = display_text
 
-    # Save User Msg
     db_q('INSERT INTO chat_log (username, role, content, session_id) VALUES (?,?,?,?)', (st.session_state.username, "user", display_text, st.session_state.sid))
     st.session_state.messages.append({"role": "user", "content": display_text})
 
-    # AI Response
     with st.chat_message("assistant", avatar=ai_av):
-        with st.spinner("Processing STEM Logic..."):
-            mem = db_q('SELECT secret_profile FROM users WHERE username=?', (st.session_state.username,), True)
-            profile = mem[0][0] if mem else "New Student"
-            
-            sys_prompt = f"You are a {persona} fluent in {lang}. Use LaTeX for all math. User Context: {profile}"
-            
-            model_to_use = "llama-3.2-11b-vision-preview" if uploaded_file else "llama-3.3-70b-versatile"
-            content_payload = image_payload if uploaded_file else display_text
-            
-            res = client.chat.completions.create(
-                model=model_to_use,
-                messages=[{"role": "system", "content": sys_prompt}] + [{"role": m["role"], "content": m["content"]} for m in st.session_state.messages[-8:]]
-            )
-            ans = res.choices[0].message.content
-            st.markdown(ans)
-            st.session_state.messages.append({"role": "assistant", "content": ans})
-            db_q('INSERT INTO chat_log (username, role, content, session_id) VALUES (?,?,?,?)', (st.session_state.username, "assistant", ans, st.session_state.sid))
+        mem = db_q('SELECT secret_profile FROM users WHERE username=?', (st.session_state.username,), True)
+        profile = mem[0][0] if mem else "New Student"
+        sys_prompt = f"You are a {persona} fluent in {lang}. Use LaTeX ($) for all math. Context: {profile}"
+        
+        res = client.chat.completions.create(
+            model=model_to_use,
+            messages=[{"role": "system", "content": sys_prompt}] + st.session_state.messages[-8:] + [{"role": "user", "content": content_payload}]
+        )
+        ans = res.choices[0].message.content
+        st.markdown(ans)
+        st.session_state.messages.append({"role": "assistant", "content": ans})
+        db_q('INSERT INTO chat_log (username, role, content, session_id) VALUES (?,?,?,?)', (st.session_state.username, "assistant", ans, st.session_state.sid))
 
 components.html("<script>window.parent.document.querySelectorAll('.stChatMessage').forEach(el => el.scrollIntoView({behavior:'smooth'}));</script>", height=0)
+
