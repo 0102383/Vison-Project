@@ -1,17 +1,11 @@
 import streamlit as st
-import sqlite3
-import base64
-import os
-import time
-import uuid
+import sqlite3, base64, os, time, uuid
 import streamlit.components.v1 as components
 from fpdf import FPDF
 from groq import Groq
 
-# --- PART 1: MASTER SETTINGS ---
-LOGO_FILENAME = "vison_logo.jpg" 
-AI_AVATAR_FILENAME = "ai_logo_glow.jpg"
-ADMIN_USERNAME = "0102383"
+# --- PART 1: SETTINGS ---
+LOGO, AVATAR, ADMIN = "vison_logo.jpg", "ai_logo_glow.jpg", "0102383"
 
 # --- PART 2: DATABASE ---
 def db_query(q, data=(), fetch=False):
