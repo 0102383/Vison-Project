@@ -3,6 +3,10 @@ import sqlite3
 import base64
 import os
 
+# --- ⚙️ MASTER SETTINGS ⚙️ ---
+# Pointing exactly to your GitHub file!
+LOGO_FILENAME = "vison_logo.jpg" 
+
 # --- 1. SAFE LIBRARY IMPORT ---
 GROQ_AVAILABLE = False
 try:
@@ -70,12 +74,15 @@ def clear_user_memory(username):
 
 init_db()
 
-# --- 4. IMAGE ENCODER FUNCTION ---
+# --- 4. IMAGE ENCODER FUNCTION (WITH ALARM BELL) ---
 def get_image_base64(image_path):
     if os.path.exists(image_path):
         with open(image_path, "rb") as img_file:
             return base64.b64encode(img_file.read()).decode('utf-8')
-    return None
+    else:
+        # This prints a red error box exactly where the image is supposed to be if it's missing!
+        st.error(f"⚠️ ERROR: I cannot find the file named '{image_path}' in your GitHub repository. Please check the spelling!")
+        return None
 
 # --- 5. UI & CSS (ANIMATIONS & GLOW EFFECTS) ---
 st.set_page_config(page_title="VISON AI", page_icon="🚀", layout="wide")
@@ -114,7 +121,7 @@ if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
 
 if not st.session_state.logged_in:
-    logo_b64 = get_image_base64("vison_logo.jpg")
+    logo_b64 = get_image_base64(LOGO_FILENAME)
     if logo_b64:
         st.markdown(f'''<div class="hero-container"><img src="data:image/jpeg;base64,{logo_b64}" class="hero-image"></div>''', unsafe_allow_html=True)
     
@@ -165,7 +172,7 @@ with st.sidebar:
         st.rerun()
     st.markdown("---")
     
-    sidebar_logo = get_image_base64("vison_logo.jpg")
+    sidebar_logo = get_image_base64(LOGO_FILENAME)
     if sidebar_logo:
         st.markdown(f"""<center><img src="data:image/jpeg;base64,{sidebar_logo}" style="max-width: 100px; border-radius: 10px; margin-bottom: 10px;"></center>""", unsafe_allow_html=True)
     
