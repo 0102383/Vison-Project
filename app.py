@@ -2,9 +2,9 @@ import streamlit as st
 import sqlite3
 import base64
 import os
+from fpdf import FPDF # New library for PDF generation
 
 # --- ⚙️ MASTER SETTINGS ⚙️ ---
-# Make sure these match the files you uploaded to GitHub!
 LOGO_FILENAME = "vison_logo.jpg" 
 AI_AVATAR_FILENAME = "ai_logo_glow.jpg"
 
@@ -14,7 +14,7 @@ try:
     from groq import Groq
     GROQ_AVAILABLE = True
 except ImportError:
-    st.error("🚀 **System Requirement:** Please add `groq` to your `requirements.txt` file.")
+    st.error("🚀 Please add `groq` to your `requirements.txt`!")
 
 # --- 2. SETUP & SECRETS ---
 client = None
@@ -92,6 +92,30 @@ def load_memory(username):
     conn.close()
     return [{"role": row[0], "content": row[1]} for row in data]
 
+# --- PDF GENERATOR FUNCTION ---
+def create_pdf(chat_history):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", 'B', 16)
+    pdf.cell(200, 10, txt="VISON AI - STEM Study Session", ln=True, align='C')
+    pdf.set_font("Arial", size=12)
+    pdf.ln(10)
+    
+    for msg in chat_history:
+        role = "YOU" if msg["role"] == "user" else "VISON AI"
+        content = msg["content"]
+        # If content is a list (from vision), just grab the text
+        if isinstance(content, list):
+            content = content[0]["text"]
+        
+        pdf.set_font("Arial", 'B', 10)
+        pdf.cell(200, 10, txt=f"{role}:", ln=True)
+        pdf.set_font("Arial", size=10)
+        pdf.multi_cell(0, 5, txt=str(content))
+        pdf.ln(5)
+        
+    return pdf.output(dest='S').encode('latin-1')
+
 init_db()
 
 # --- 4. IMAGE ENCODER ---
@@ -103,7 +127,7 @@ def get_image_base64(image_path):
 
 ai_avatar_b64 = get_image_base64(AI_AVATAR_FILENAME)
 
-# --- 5. UI & CSS (NEON THEME) ---
+# --- 5. UI & CSS ---
 st.set_page_config(page_title="VISON AI", page_icon="🚀", layout="wide")
 
 st.markdown("""
@@ -140,12 +164,10 @@ if not st.session_state.logged_in:
                     st.rerun()
     st.stop()
 
-# --- 7. SIDEBAR (PROFILE & MATH MODE) ---
+# --- 7. SIDEBAR ---
 with st.sidebar:
     st.markdown(f"### 👤 {st.session_state.username}")
-    
-    # MATH MODE TOGGLE
-    math_mode = st.toggle("📐 Math Mode (LaTeX)", value=True, help="Renders math in professional formulas!")
+    math_mode = st.toggle("📐 Math Mode (LaTeX)", value=True)
     
     profile = get_profile(st.session_state.username)
     new_ints = st.text_area("🧠 My Interests", value=profile["interests"])
@@ -154,11 +176,16 @@ with st.sidebar:
     
     if st.button("Update Memory"):
         save_profile(st.session_state.username, new_ints, new_level)
-        st.success("Profile learned! 🚀")
+        st.success("Learned! 🚀")
     
     st.markdown("---")
     persona = st.selectbox("Persona", ["Friendly Mentor", "Quirky Scientist", "Casual Chat Buddy"])
-    lang = st.selectbox("Language", ["English", "Bahasa Melayu", "Japanese"])
+    
+    # PDF DOWNLOAD BUTTON IN SIDEBAR
+    if st.button("📄 Generate PDF Study Guide"):
+        history = load_memory(st.session_state.username)
+        pdf_bytes = create_pdf(history)
+        st.download_button(label="📥 Download My Session", data=pdf_bytes, file_name="vison_study_guide.pdf", mime="application/pdf")
 
 # --- 8. CHAT INTERFACE ---
 st.markdown('<p class="main-title">🚀 VISON AI CORE</p>', unsafe_allow_html=True)
@@ -169,7 +196,6 @@ if "messages" not in st.session_state:
 for msg in st.session_state.messages:
     avatar = f"data:image/png;base64,{ai_avatar_b64}" if msg["role"] == "assistant" and ai_avatar_b64 else "👤"
     with st.chat_message(msg["role"], avatar=avatar):
-        # We need to handle the fact that history might be strings or vision-lists
         content = msg["content"]
         if isinstance(content, list):
             for item in content:
@@ -177,14 +203,11 @@ for msg in st.session_state.messages:
         else:
             st.markdown(content)
 
-# --- THE "PLUS" UPLOADER AREA ---
 st.markdown("---")
-uploaded_file = st.file_uploader("➕ Add Image / Equation", type=['png', 'jpg', 'jpeg'], help="Upload a photo to solve it!")
-
+uploaded_file = st.file_uploader("➕ Add Image / Equation", type=['png', 'jpg', 'jpeg'])
 user_input = st.chat_input("Ask Vison anything...")
 
 if user_input:
-    # 1. Show user message
     if uploaded_file:
         img_b64 = base64.b64encode(uploaded_file.getvalue()).decode('utf-8')
         user_content = [
@@ -203,19 +226,13 @@ if user_input:
 
     st.session_state.messages.append({"role": "user", "content": user_content})
 
-    # 2. Get AI Response
     with st.chat_message("assistant", avatar=f"data:image/png;base64,{ai_avatar_b64}" if ai_avatar_b64 else None):
         if client:
             with st.spinner("Analyzing..."):
                 try:
                     model_id = "llama-3.2-11b-vision-preview" if uploaded_file else "llama-3.1-8b-instant"
-                    
-                    # AI Instructions
                     math_instruction = "IMPORTANT: Use LaTeX (enclosed in $$) for all math." if math_mode else ""
-                    if persona == "Casual Chat Buddy":
-                        sys_m = f"You are a cool, relaxed friend talking in {lang}. Be funny and casual."
-                    else:
-                        sys_m = f"You are {persona} in {lang}. Level: {new_level}. Interests: {new_ints}. {math_instruction}"
+                    sys_m = f"You are {persona}. Level: {new_level}. Interests: {new_ints}. {math_instruction}"
                     
                     api_msgs = [{"role": "system", "content": sys_m}] + st.session_state.messages
                     res = client.chat.completions.create(model=model_id, messages=api_msgs)
@@ -226,7 +243,3 @@ if user_input:
                     save_message(st.session_state.username, "assistant", ans)
                 except Exception as e:
                     st.error(f"Error: {e}")
-
-
-
-
