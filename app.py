@@ -278,3 +278,100 @@ with st.sidebar:
                 f"Let me know if I am too slow!"
             )
             st.rerun()
+# --- 7. MAIN CHAT INTERFACE ---
+st.markdown('<p class="main-title">🚀 VISON AI CORE</p>', unsafe_allow_html=True)
+
+if "messages" not in st.session_state: 
+    st.session_state.messages = load_memory(st.session_state.username, st.session_state.current_session)
+
+for msg in st.session_state.messages:
+    if msg["role"] == "assistant":
+        display_avatar = f"data:image/jpeg;base64,{ai_avatar_b64}" if ai_avatar_b64 else "🤖"
+    else:
+        display_avatar = "👤"
+        
+    with st.chat_message(msg["role"], avatar=display_avatar):
+        st.markdown(msg["content"])
+
+st.markdown("---")
+
+uploaded_file = st.file_uploader("➕ Add Image / Equation", type=['png', 'jpg', 'jpeg'], key="vison_uploader_main")
+
+user_input = st.chat_input("Ask Vison anything...")
+
+if st.session_state.get("pending_prompt"):
+    user_input = st.session_state.pending_prompt
+    st.session_state.pending_prompt = None
+
+if user_input:
+    time_note_for_ai = ""
+    display_time = None
+    
+    if st.session_state.get("quiz_mode") and "last_ai_time" in st.session_state:
+        elapsed_time = int(time.time() - st.session_state.last_ai_time)
+        limit = st.session_state.get("quiz_time_limit", 30)
+        display_time = f"⏱️ Time taken: {elapsed_time}s / {limit}s"
+        
+        if elapsed_time > limit:
+            time_note_for_ai = f"\n\n[System Alert to AI: The student took {elapsed_time} seconds. The limit was {limit} seconds. They FAILED the time limit! Tell them!]"
+        else:
+            time_note_for_ai = f"\n\n[System Alert to AI: The student answered in {elapsed_time} seconds. Fast enough!]"
+
+    st.session_state.messages.append({"role": "user", "content": user_input})
+    save_message(st.session_state.username, "user", user_input, st.session_state.current_session)
+    
+    with st.chat_message("user", avatar="👤"): 
+        st.markdown(user_input)
+        if display_time:
+            st.caption(display_time)
+
+    with st.chat_message("assistant", avatar=f"data:image/jpeg;base64,{ai_avatar_b64}" if ai_avatar_b64 else "🤖"):
+        if client:
+            try:
+                # 🛠️ HERE IS THE UPDATED VISION MODEL LINE!
+                model_id = "llama-3.2-11b-vision-instruct" if uploaded_file else "llama-3.3-70b-versatile"
+                
+                math_text = "IMPORTANT: Use LaTeX (enclosed in $$) for all math." if math_mode else ""
+                
+                # Fetch their secret profile so the AI knows how they are feeling right now!
+                secret_context = f"Student Profile Note: {profile['secret']}" if profile['secret'] != "No data yet." else ""
+                
+                sys_m = f"You are {persona} in {lang}. Level: {new_level}. Interests: {new_ints}. {secret_context} {math_text}"
+                
+                messages_for_ai = st.session_state.messages.copy()
+                if time_note_for_ai:
+                    messages_for_ai[-1] = {"role": "user", "content": user_input + time_note_for_ai}
+                
+                res = client.chat.completions.create(
+                    model=model_id, 
+                    messages=[{"role": "system", "content": sys_m}] + messages_for_ai
+                )
+                ans = res.choices[0].message.content
+                st.markdown(ans)
+                
+                tokens = res.usage.total_tokens
+                st.caption(f"⚙️ **Model:** {model_id} | 🧠 **Tokens:** {tokens}")
+                
+                st.session_state.last_ai_time = time.time()
+                
+                st.session_state.messages.append({"role": "assistant", "content": ans})
+                save_message(st.session_state.username, "assistant", ans, st.session_state.current_session)
+            
+            except Exception as e:
+                st.error(f"Error: {e}")
+
+# --- 8. AUTO-SCROLL TO BOTTOM JAVASCRIPT ---
+components.html(
+    """
+    <script>
+        function scrollToBottom() {
+            var chatElements = window.parent.document.querySelectorAll('.stChatMessage');
+            if (chatElements.length > 0) {
+                chatElements[chatElements.length - 1].scrollIntoView({ behavior: 'smooth' });
+            }
+        }
+        setTimeout(scrollToBottom, 300);
+    </script>
+    """,
+    height=0,
+)
