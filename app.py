@@ -4,6 +4,7 @@ import base64
 import os
 
 # --- ⚙️ MASTER SETTINGS ⚙️ ---
+# Make sure these match the files you uploaded to GitHub!
 LOGO_FILENAME = "vison_logo.jpg" 
 AI_AVATAR_FILENAME = "ai_logo_glow.jpg"
 
@@ -24,7 +25,7 @@ if GROQ_AVAILABLE:
     except Exception as e:
         st.error(f"Connection Error: {e}")
 
-# --- 3. DATABASE (UPGRADED FOR PROFILE LEARNING) ---
+# --- 3. DATABASE (PROFILE & LEARNING) ---
 def init_db():
     conn = sqlite3.connect('vison_user_data.db')
     c = conn.cursor()
@@ -32,7 +33,6 @@ def init_db():
                  (username TEXT PRIMARY KEY, password TEXT, interests TEXT, level TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS chat_log 
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, role TEXT, content TEXT)''')
-    # Update older databases to include new columns if they are missing
     try:
         c.execute("ALTER TABLE users ADD COLUMN interests TEXT")
     except: pass
@@ -92,16 +92,9 @@ def load_memory(username):
     conn.close()
     return [{"role": row[0], "content": row[1]} for row in data]
 
-def clear_user_memory(username):
-    conn = sqlite3.connect('vison_user_data.db')
-    c = conn.cursor()
-    c.execute('DELETE FROM chat_log WHERE username=?', (username,))
-    conn.commit()
-    conn.close()
-
 init_db()
 
-# --- 4. IMAGE ENCODER FUNCTION ---
+# --- 4. IMAGE ENCODER ---
 def get_image_base64(image_path):
     if os.path.exists(image_path):
         with open(image_path, "rb") as img_file:
@@ -116,17 +109,16 @@ st.set_page_config(page_title="VISON AI", page_icon="🚀", layout="wide")
 st.markdown("""
     <style>
     .main-title { font-size: 50px !important; font-weight: 800 !important; background: -webkit-linear-gradient(#a252ff, #0072ff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-align: center; }
-    .login-box { background-color: #1c2128; padding: 40px; border-radius: 20px; border: 2px solid #a252ff; text-align: center; }
-    [data-testid="stChatInput"] { border: 2px solid #a252ff !important; border-radius: 10px !important; background-color: #0e1117 !important; }
+    [data-testid="stChatInput"] { border: 2px solid #a252ff !important; border-radius: 10px !important; }
     
-    /* Chat Bubble Alignment */
+    /* Bubble alignment & Glow */
     div[data-testid="stChatMessage"]:has(span[aria-label="User Avatar icon"]) { flex-direction: row-reverse !important; text-align: right !important; }
     div[data-testid="stChatMessage"]:has(span[aria-label="User Avatar icon"]) > div { background-color: rgba(162, 82, 255, 0.1) !important; border: 1px solid #a252ff !important; border-radius: 15px !important; }
     div[data-testid="stChatMessage"]:has(img[data-testid="stChatMessageAvatarImage"]) > div { background-color: rgba(0, 114, 255, 0.1) !important; border: 1px solid #0072ff !important; border-radius: 15px !important; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 6. LOGIN ---
+# --- 6. LOGIN SYSTEM ---
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
 
@@ -137,7 +129,6 @@ if not st.session_state.logged_in:
     
     cols = st.columns([1, 2, 1])
     with cols[1]:
-        st.markdown('<div class="login-box">', unsafe_allow_html=True)
         user_id = st.text_input("Username")
         user_pass = st.text_input("Password", type="password")
         if st.button("Unlock AI"):
@@ -147,70 +138,63 @@ if not st.session_state.logged_in:
                     st.session_state.logged_in = True
                     st.session_state.username = clean_id
                     st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
     st.stop()
 
-# --- 7. SIDEBAR (PROFILE & SETTINGS) ---
+# --- 7. SIDEBAR (PROFILE & MATH MODE) ---
 with st.sidebar:
     st.markdown(f"### 👤 {st.session_state.username}")
     
-    # LEARNING PROFILE
+    # MATH MODE TOGGLE
+    math_mode = st.toggle("📐 Math Mode (LaTeX)", value=True, help="Renders math in professional formulas!")
+    
     profile = get_profile(st.session_state.username)
     new_ints = st.text_area("🧠 My Interests", value=profile["interests"])
-    
-    # EDUCATION LEVEL SELECTOR
-    levels = ["Primary School", "High School", "University / Professional"]
-    current_level_idx = levels.index(profile["level"]) if profile["level"] in levels else 1
-    new_level = st.selectbox("🎓 Education Level", levels, index=current_level_idx)
+    levels = ["Primary School", "High School", "University"]
+    new_level = st.selectbox("🎓 Level", levels, index=levels.index(profile["level"]) if profile["level"] in levels else 1)
     
     if st.button("Update Memory"):
         save_profile(st.session_state.username, new_ints, new_level)
         st.success("Profile learned! 🚀")
     
     st.markdown("---")
+    persona = st.selectbox("Persona", ["Friendly Mentor", "Quirky Scientist", "Casual Chat Buddy"])
     lang = st.selectbox("Language", ["English", "Bahasa Melayu", "Japanese"])
-    persona = st.selectbox("Persona", ["Friendly Mentor", "Quirky Scientist", "Strict Professor", "Casual Chat Buddy"])
-    
-    if st.button("🗑️ Wipe Chat History"):
-        clear_user_memory(st.session_state.username)
-        st.session_state.messages = []
-        st.rerun()
 
+# --- 8. CHAT INTERFACE ---
 st.markdown('<p class="main-title">🚀 VISON AI CORE</p>', unsafe_allow_html=True)
 
-# --- 8. CHAT LOGIC ---
-# --- 8. CHAT LOGIC (WITH MAIN SCREEN UPLOADER) ---
 if "messages" not in st.session_state:
     st.session_state.messages = load_memory(st.session_state.username)
 
-# Display history
 for msg in st.session_state.messages:
     avatar = f"data:image/png;base64,{ai_avatar_b64}" if msg["role"] == "assistant" and ai_avatar_b64 else "👤"
     with st.chat_message(msg["role"], avatar=avatar):
-        st.markdown(msg["content"])
+        # We need to handle the fact that history might be strings or vision-lists
+        content = msg["content"]
+        if isinstance(content, list):
+            for item in content:
+                if item["type"] == "text": st.markdown(item["text"])
+        else:
+            st.markdown(content)
 
 # --- THE "PLUS" UPLOADER AREA ---
-# We place this right above the chat input
 st.markdown("---")
-uploaded_file = st.file_uploader("➕ Add Image / Equation", type=['png', 'jpg', 'jpeg'], help="Upload a photo of your math equation here!")
+uploaded_file = st.file_uploader("➕ Add Image / Equation", type=['png', 'jpg', 'jpeg'], help="Upload a photo to solve it!")
 
 user_input = st.chat_input("Ask Vison anything...")
 
 if user_input:
-    # Handle Image Upload if present
+    # 1. Show user message
     if uploaded_file:
-        # Convert image to base64 for the AI to 'see' it
         img_b64 = base64.b64encode(uploaded_file.getvalue()).decode('utf-8')
         user_content = [
             {"type": "text", "text": user_input},
             {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}}
         ]
-        # Display the image in the chat
         with st.chat_message("user", avatar="👤"):
             st.image(uploaded_file, width=300)
             st.markdown(user_input)
-        
-        save_message(st.session_state.username, "user", f"{user_input} [Image Uploaded]")
+        save_message(st.session_state.username, "user", f"{user_input} [Image Attached]")
     else:
         user_content = user_input
         with st.chat_message("user", avatar="👤"):
@@ -219,24 +203,24 @@ if user_input:
 
     st.session_state.messages.append({"role": "user", "content": user_content})
 
-    # AI Response
+    # 2. Get AI Response
     with st.chat_message("assistant", avatar=f"data:image/png;base64,{ai_avatar_b64}" if ai_avatar_b64 else None):
         if client:
-            user_prof = get_profile(st.session_state.username)
-            with st.spinner("Analyzing equation..."):
+            with st.spinner("Analyzing..."):
                 try:
-                    # Switch to vision model if image is uploaded
                     model_id = "llama-3.2-11b-vision-preview" if uploaded_file else "llama-3.1-8b-instant"
                     
-                    sys_m = f"You are {persona} in {lang}. User level: {user_prof['level']}. Interests: {user_prof['interests']}. If an image is provided, solve the equation step-by-step."
+                    # AI Instructions
+                    math_instruction = "IMPORTANT: Use LaTeX (enclosed in $$) for all math." if math_mode else ""
+                    if persona == "Casual Chat Buddy":
+                        sys_m = f"You are a cool, relaxed friend talking in {lang}. Be funny and casual."
+                    else:
+                        sys_m = f"You are {persona} in {lang}. Level: {new_level}. Interests: {new_ints}. {math_instruction}"
                     
-                    api_msgs = [{"role": "system", "content": sys_m}]
-                    # We need to format the history correctly for the vision model
-                    for m in st.session_state.messages:
-                        api_msgs.append({"role": m["role"], "content": m["content"]})
-
+                    api_msgs = [{"role": "system", "content": sys_m}] + st.session_state.messages
                     res = client.chat.completions.create(model=model_id, messages=api_msgs)
                     ans = res.choices[0].message.content
+                    
                     st.markdown(ans)
                     st.session_state.messages.append({"role": "assistant", "content": ans})
                     save_message(st.session_state.username, "assistant", ans)
