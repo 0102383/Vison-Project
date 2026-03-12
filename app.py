@@ -8,7 +8,7 @@ import streamlit.components.v1 as components
 from fpdf import FPDF
 
 # --- ⚙️ MASTER SETTINGS ⚙️ ---
-LOGO_FILENAME = "vison_logo.jpg" 
+LOGO_FILENAME = "vison_logo.jpg.png" 
 AI_AVATAR_FILENAME = "ai_logo_glow.jpg"
 
 # --- 1. SAFE LIBRARY IMPORT ---
@@ -136,7 +136,10 @@ if "current_session" not in st.session_state:
         st.session_state.current_session = db_sessions[-1]
     else:
         st.session_state.current_session = str(uuid.uuid4())
-        db_sessions.append(st.session_state.current_session)
+
+# 🛠️ THE BUG FIX: Force the app to recognize the new chat even if it's empty!
+if st.session_state.current_session not in db_sessions:
+    db_sessions.append(st.session_state.current_session)
 
 # The 1-Hour Auto-Brain (Every 3600 seconds)
 if "last_learn_time" not in st.session_state:
@@ -166,12 +169,18 @@ with st.sidebar:
         st.session_state.messages = []
         st.rerun()
         
-    if db_sessions:
-        selected_session = st.selectbox("Jump to past chat:", reversed(db_sessions), index=0 if st.session_state.current_session not in db_sessions else db_sessions[::-1].index(st.session_state.current_session))
-        if selected_session != st.session_state.current_session:
-            st.session_state.current_session = selected_session
-            st.session_state.messages = load_memory(st.session_state.username, selected_session)
-            st.rerun()
+    # 🛠️ THE BUG FIX: The Dropdown menu is now safe
+    reversed_sessions = db_sessions[::-1]
+    selected_session = st.selectbox(
+        "Jump to past chat:", 
+        reversed_sessions, 
+        index=reversed_sessions.index(st.session_state.current_session)
+    )
+    
+    if selected_session != st.session_state.current_session:
+        st.session_state.current_session = selected_session
+        st.session_state.messages = load_memory(st.session_state.username, selected_session)
+        st.rerun()
     
     st.markdown("---")
     st.subheader("⏱️ Focus Timer")
@@ -268,4 +277,3 @@ components.html(
     """,
     height=0,
 )
-
