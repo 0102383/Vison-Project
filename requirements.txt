@@ -1,6 +1,6 @@
 groq
 streamlit
 fpdf
-
+gTTS
 
 
