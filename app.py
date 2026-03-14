@@ -1,5 +1,5 @@
 import streamlit as st
-import sqlite3, base64, os, time, uuid, datetime
+import sqlite3, base64, os, time, uuid, datetime, re
 import streamlit.components.v1 as components
 import matplotlib.pyplot as plt
 import numpy as np
@@ -28,12 +28,9 @@ def db_q(q, d=(), fetch=False):
     finally: conn.close()
 
 def init_db():
-    # Created email column for new databases
     db_q('''CREATE TABLE IF NOT EXISTS users (username TEXT PRIMARY KEY, password TEXT, email TEXT, interests TEXT, level TEXT, secret_profile TEXT DEFAULT 'No data yet.')''')
-    # Safely inject email column into existing databases if it's missing
     try: db_q('ALTER TABLE users ADD COLUMN email TEXT') 
     except: pass
-    
     db_q('''CREATE TABLE IF NOT EXISTS chat_log (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, role TEXT, content TEXT, session_id TEXT)''')
     db_q('''CREATE TABLE IF NOT EXISTS chat_sessions (session_id TEXT PRIMARY KEY, username TEXT, session_name TEXT, last_modified TEXT, mood_emoji TEXT DEFAULT '💬')''')
 
@@ -129,7 +126,7 @@ if not st.session_state.logged_in:
                 
                 if res and res[0][0] == p:
                     st.session_state.logged_in = True
-                    st.session_state.username = res[0][1] # Set the session to their actual User ID
+                    st.session_state.username = res[0][1] 
                     st.rerun()
                 else:
                     st.error("❌ Invalid Email/Admin ID or Security Key.")
@@ -187,12 +184,14 @@ with st.sidebar:
     if st.button("Logout"): st.session_state.clear(); st.rerun()
     st.divider()
     
-    # 🧮 CALCULATOR BUTTON
-    with st.expander("🧮 Quick Calculator"):
-        calc_input = st.text_input("Expression (e.g., 5*12 or sqrt(16)):")
+    # 🔬 SCIENTIFIC CALCULATOR
+    with st.expander("🔬 Scientific Calculator"):
+        st.markdown("<small><b>Functions:</b> <code>sin()</code>, <code>cos()</code>, <code>tan()</code>, <code>log()</code>, <code>ln()</code>, <code>sqrt()</code>, <code>exp()</code><br><b>Constants:</b> <code>pi</code>, <code>e</code> | <b>Power:</b> <code>^</code></small>", unsafe_allow_html=True)
+        calc_input = st.text_input("Expression:")
         if calc_input:
             try:
-                safe_calc = calc_input.replace('^', '**').replace('sin', 'np.sin').replace('cos', 'np.cos').replace('tan', 'np.tan').replace('sqrt', 'np.sqrt')
+                safe_calc = calc_input.lower().replace('^', '**').replace('sin', 'np.sin').replace('cos', 'np.cos').replace('tan', 'np.tan').replace('sqrt', 'np.sqrt').replace('pi', 'np.pi').replace('log', 'np.log10').replace('ln', 'np.log').replace('exp', 'np.exp')
+                safe_calc = re.sub(r'\be\b', 'np.e', safe_calc)
                 ans = eval(safe_calc)
                 st.success(f"= {ans}")
             except:
@@ -244,97 +243,9 @@ with st.sidebar:
     if st.session_state.username == ADMIN:
         st.divider()
         with st.expander("🕵️ ADMIN VAULT"):
-            if st.button("⚡ Sync & Analyze"):
+            if st.button("⚡ Sync Evolution"):
                 e, pw, mo = analyze_all(st.session_state.username, st.session_state.sid)
                 st.session_state.evo, st.session_state.pwr = e, pw
                 st.rerun()
             
-            if "pwr" in st.session_state:
-                st.metric("Power Level", f"{st.session_state.pwr}/100")
-                pdf_data = create_evolution_pdf(st.session_state.username, st.session_state.pwr, st.session_state.evo, st.session_state.messages)
-                st.download_button("📄 Download Evolution Report", data=pdf_data, file_name=f"vison_report_{st.session_state.username}.pdf", mime="application/pdf")
-                st.write(f"**Analysis:** {st.session_state.evo}")
-
-            if st.button("🗑️ NUCLEAR DATA WIPE"):
-                db_q('DELETE FROM chat_log WHERE username=?', (st.session_state.username,))
-                db_q('DELETE FROM chat_sessions WHERE username=?', (st.session_state.username,))
-                st.rerun()
-
-# --- PART 7: MAIN CHAT & MOOD RING ---
-current_mood = "💬"
-if 'sid' in st.session_state:
-    res = db_q('SELECT mood_emoji FROM chat_sessions WHERE session_id=?', (st.session_state.sid,), True)
-    if res: current_mood = res[0][0]
-mood_color = get_mood_color(current_mood)
-
-st.markdown(f"""
-    <style>
-    .mood-ring {{ height: 5px; width: 100%; background: linear-gradient(90deg, transparent, {mood_color}, transparent); box-shadow: 0px 5px 15px {mood_color}; margin-bottom: 20px; }}
-    .main-title {{ font-size: 45px !important; font-weight: 800; background: linear-gradient({mood_color}, #ffffff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-align: center; }}
-    div[data-testid="stChatMessage"]:has(span[aria-label="User Avatar icon"]) {{ flex-direction: row-reverse !important; }}
-    </style>
-    <div class="mood-ring"></div>
-    """, unsafe_allow_html=True)
-
-st.markdown('<p class="main-title">🚀 VISON AI STEM CORE</p>', unsafe_allow_html=True)
-
-if 'sid' not in st.session_state:
-    st.session_state.sid = str(uuid.uuid4())
-    db_q('INSERT OR IGNORE INTO chat_sessions VALUES (?,?,?,?,?)', (st.session_state.sid, st.session_state.username, "Initial Entry", datetime.datetime.now().strftime("%H:%M"), "💬"))
-if "messages" not in st.session_state: st.session_state.messages = []
-
-ai_av = f"data:image/png;base64,{get_64(AI_AVATAR_FILENAME)}" if get_64(AI_AVATAR_FILENAME) else "🤖"
-for m in st.session_state.messages:
-    with st.chat_message(m["role"], avatar=ai_av if m["role"]=="assistant" else "👤"): 
-        st.markdown(m["content"])
-
-user_in = st.chat_input("Evolve your thinking...")
-
-# Auto-Trigger Quiz via button
-if st.session_state.get('pending_quiz'):
-    user_in = "Generate a challenging 3-question STEM quiz based on our conversation. Use LaTeX for equations."
-    st.session_state.pending_quiz = False
-
-if user_in or uploaded_file:
-    client = Groq(api_key=st.secrets["GROQ_API_KEY"])
-    now = datetime.datetime.now().strftime("%H:%M")
-    
-    # Check for Graphing
-    if user_in and "plot" in user_in.lower():
-        eq = user_in.lower().split("plot")[-1].strip().replace("$", "")
-        fig = simple_plot(eq)
-        if fig: st.pyplot(fig)
-
-    # Payload Setup
-    model_to_use = "llama-3.2-11b-vision-preview" if uploaded_file else "llama-3.3-70b-versatile"
-    display_text = user_in if user_in else "Analyze this image."
-    
-    if uploaded_file:
-        img_b64 = base64.b64encode(uploaded_file.getvalue()).decode()
-        content_payload = [{"type": "text", "text": display_text}, {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}}]
-        with st.chat_message("user", avatar="👤"): st.image(uploaded_file, width=300); st.markdown(display_text)
-    else:
-        content_payload = display_text
-        with st.chat_message("user", avatar="👤"): st.markdown(user_in)
-
-    # Save User Message
-    db_q('INSERT INTO chat_log (username, role, content, session_id) VALUES (?,?,?,?)', (st.session_state.username, "user", display_text, st.session_state.sid))
-    db_q('UPDATE chat_sessions SET last_modified=? WHERE session_id=?', (now, st.session_state.sid))
-    st.session_state.messages.append({"role": "user", "content": display_text})
-
-    # AI Response
-    with st.chat_message("assistant", avatar=ai_av):
-        mem = db_q('SELECT secret_profile FROM users WHERE username=?', (st.session_state.username,), True)
-        profile = mem[0][0] if mem else "New Student"
-        sys_prompt = f"You are a {persona} fluent in {lang}. Use LaTeX ($) for all math. Student Context: {profile}"
-        
-        res = client.chat.completions.create(
-            model=model_to_use,
-            messages=[{"role": "system", "content": sys_prompt}] + [{"role": m["role"], "content": m["content"]} for m in st.session_state.messages[-8:]] + [{"role": "user", "content": content_payload}]
-        )
-        ans = res.choices[0].message.content
-        st.markdown(ans)
-        st.session_state.messages.append({"role": "assistant", "content": ans})
-        db_q('INSERT INTO chat_log (username, role, content, session_id) VALUES (?,?,?,?)', (st.session_state.username, "assistant", ans, st.session_state.sid))
-
-components.html("<script>window.parent.document.querySelectorAll('.stChatMessage').forEach(el => el.scrollIntoView({behavior:'smooth'}));</script>", height=0)
+            if "pwr" in st.
