@@ -1,12 +1,8 @@
 streamlit
-groq
-fpdf
 matplotlib
 numpy
-
-
-
-
+fpdf
+groq
 
 
 
