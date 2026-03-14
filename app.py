@@ -28,7 +28,12 @@ def db_q(q, d=(), fetch=False):
     finally: conn.close()
 
 def init_db():
-    db_q('''CREATE TABLE IF NOT EXISTS users (username TEXT PRIMARY KEY, password TEXT, interests TEXT, level TEXT, secret_profile TEXT DEFAULT 'No data yet.')''')
+    # Created email column for new databases
+    db_q('''CREATE TABLE IF NOT EXISTS users (username TEXT PRIMARY KEY, password TEXT, email TEXT, interests TEXT, level TEXT, secret_profile TEXT DEFAULT 'No data yet.')''')
+    # Safely inject email column into existing databases if it's missing
+    try: db_q('ALTER TABLE users ADD COLUMN email TEXT') 
+    except: pass
+    
     db_q('''CREATE TABLE IF NOT EXISTS chat_log (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, role TEXT, content TEXT, session_id TEXT)''')
     db_q('''CREATE TABLE IF NOT EXISTS chat_sessions (session_id TEXT PRIMARY KEY, username TEXT, session_name TEXT, last_modified TEXT, mood_emoji TEXT DEFAULT '💬')''')
 
@@ -98,7 +103,7 @@ def get_mood_color(emoji):
     mood_map = {"🧠": "#00d4ff", "⚠️": "#ff4b4b", "🔥": "#ffaa00", "✅": "#00ff88", "💬": "#a252ff"}
     return mood_map.get(emoji, "#a252ff")
 
-# --- PART 5: GATEWAY (NEW AUTHENTICATION FLOW) ---
+# --- PART 5: GATEWAY (NEW EMAIL AUTHENTICATION FLOW) ---
 st.set_page_config(page_title="VISON AI STEM", layout="wide")
 init_db()
 
@@ -109,45 +114,72 @@ if not st.session_state.logged_in:
     if lb: st.markdown(f'<center><img src="data:image/jpeg;base64,{lb}" width="180"></center>', unsafe_allow_html=True)
     st.markdown("<h1 style='text-align: center; color: white;'>VISON CORE</h1>", unsafe_allow_html=True)
     
-    # Clean Radio Buttons for Login / Signup
-    auth_mode = st.radio("Access Portal", ["Log In", "Create Account"], horizontal=True)
+    auth_mode = st.radio("Access Portal", ["Log In", "Create Account", "Reset Password"], horizontal=True)
     
     if auth_mode == "Log In":
         st.subheader("Welcome Back")
-        u = st.text_input("User ID")
+        identifier = st.text_input("Email (or Admin ID)")
         p = st.text_input("Security Key", type="password")
         if st.button("Unlock Core"):
-            if u and p:
-                res = db_q('SELECT password FROM users WHERE username=?', (u.lower(),), True)
+            if identifier and p:
+                if identifier == ADMIN:
+                    res = db_q('SELECT password, username FROM users WHERE username=?', (identifier,), True)
+                else:
+                    res = db_q('SELECT password, username FROM users WHERE email=?', (identifier.lower(),), True)
+                
                 if res and res[0][0] == p:
-                    st.session_state.logged_in, st.session_state.username = True, u.lower()
+                    st.session_state.logged_in = True
+                    st.session_state.username = res[0][1] # Set the session to their actual User ID
                     st.rerun()
                 else:
-                    st.error("❌ Invalid User ID or Security Key.")
+                    st.error("❌ Invalid Email/Admin ID or Security Key.")
             else:
-                st.warning("⚠️ Please enter both your User ID and Security Key.")
+                st.warning("⚠️ Please enter your credentials.")
                 
     elif auth_mode == "Create Account":
         st.subheader("Initialize New Student")
-        new_u = st.text_input("Choose a User ID")
+        new_u = st.text_input("Choose a User ID (Display Name)")
+        new_e = st.text_input("Email Address")
         new_p = st.text_input("Create Security Key", type="password")
         new_p2 = st.text_input("Confirm Security Key", type="password")
         
         if st.button("Register Account"):
-            if new_u and new_p and new_p2:
-                if new_p == new_p2:
-                    res = db_q('SELECT username FROM users WHERE username=?', (new_u.lower(),), True)
+            if new_u and new_e and new_p and new_p2:
+                if "@" not in new_e:
+                    st.error("❌ Please enter a valid email address.")
+                elif new_p == new_p2:
+                    res = db_q('SELECT username FROM users WHERE username=? OR email=?', (new_u.lower(), new_e.lower()), True)
                     if res:
-                        st.error("❌ User ID already exists. Please choose another one.")
+                        st.error("❌ User ID or Email is already registered.")
                     else:
-                        db_q('INSERT INTO users (username, password, interests, level) VALUES (?,?,?,?)', (new_u.lower(), new_p, "STEM", "HS"))
-                        st.success("✅ Account successfully created! Please switch to 'Log In' to enter the core.")
+                        db_q('INSERT INTO users (username, password, email, interests, level) VALUES (?,?,?,?,?)', (new_u.lower(), new_p, new_e.lower(), "STEM", "HS"))
+                        st.success("✅ Account successfully created! Please switch to 'Log In'.")
                 else:
                     st.error("❌ Security Keys do not match.")
             else:
-                st.warning("⚠️ Please fill in all fields to register.")
+                st.warning("⚠️ Please fill in all fields.")
                 
-    st.stop() # Prevents the rest of the app from loading until logged in
+    elif auth_mode == "Reset Password":
+        st.subheader("System Override: Reset Key")
+        r_e = st.text_input("Registered Email")
+        r_p = st.text_input("New Security Key", type="password")
+        r_p2 = st.text_input("Confirm New Key", type="password")
+        
+        if st.button("Execute Reset"):
+            if r_e and r_p and r_p2:
+                if r_p == r_p2:
+                    res = db_q('SELECT username FROM users WHERE email=?', (r_e.lower(),), True)
+                    if res:
+                        db_q('UPDATE users SET password=? WHERE email=?', (r_p, r_e.lower()))
+                        st.success("✅ Security Key updated! Switch to 'Log In'.")
+                    else:
+                        st.error("❌ Email not found in the system.")
+                else:
+                    st.error("❌ Security Keys do not match.")
+            else:
+                st.warning("⚠️ Please fill in all fields.")
+
+    st.stop() 
 
 # --- PART 6: SIDEBAR & PRODUCTIVITY SUITE ---
 with st.sidebar:
@@ -155,6 +187,17 @@ with st.sidebar:
     if st.button("Logout"): st.session_state.clear(); st.rerun()
     st.divider()
     
+    # 🧮 CALCULATOR BUTTON
+    with st.expander("🧮 Quick Calculator"):
+        calc_input = st.text_input("Expression (e.g., 5*12 or sqrt(16)):")
+        if calc_input:
+            try:
+                safe_calc = calc_input.replace('^', '**').replace('sin', 'np.sin').replace('cos', 'np.cos').replace('tan', 'np.tan').replace('sqrt', 'np.sqrt')
+                ans = eval(safe_calc)
+                st.success(f"= {ans}")
+            except:
+                st.error("Invalid Math")
+
     # 🧠 MEMORY BUTTON
     if st.button("🗑️ Clear Memory"):
         if 'sid' in st.session_state:
@@ -295,5 +338,3 @@ if user_in or uploaded_file:
         db_q('INSERT INTO chat_log (username, role, content, session_id) VALUES (?,?,?,?)', (st.session_state.username, "assistant", ans, st.session_state.sid))
 
 components.html("<script>window.parent.document.querySelectorAll('.stChatMessage').forEach(el => el.scrollIntoView({behavior:'smooth'}));</script>", height=0)
-
-
