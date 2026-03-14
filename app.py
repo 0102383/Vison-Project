@@ -248,4 +248,92 @@ with st.sidebar:
                 st.session_state.evo, st.session_state.pwr = e, pw
                 st.rerun()
             
-            if "pwr" in st.
+            if "pwr" in st.session_state:
+                st.metric("Power Level", f"{st.session_state.pwr}/100")
+                pdf_data = create_evolution_pdf(st.session_state.username, st.session_state.pwr, st.session_state.evo, st.session_state.messages)
+                st.download_button("📄 Download Evolution Report", data=pdf_data, file_name=f"vison_report_{st.session_state.username}.pdf", mime="application/pdf")
+                st.write(f"**Analysis:** {st.session_state.evo}")
+
+            if st.button("🗑️ NUCLEAR DATA WIPE"):
+                db_q('DELETE FROM chat_log WHERE username=?', (st.session_state.username,))
+                db_q('DELETE FROM chat_sessions WHERE username=?', (st.session_state.username,))
+                st.rerun()
+
+# --- PART 7: MAIN CHAT & MOOD RING ---
+current_mood = "💬"
+if 'sid' in st.session_state:
+    res = db_q('SELECT mood_emoji FROM chat_sessions WHERE session_id=?', (st.session_state.sid,), True)
+    if res: current_mood = res[0][0]
+mood_color = get_mood_color(current_mood)
+
+st.markdown(f"""
+    <style>
+    .mood-ring {{ height: 5px; width: 100%; background: linear-gradient(90deg, transparent, {mood_color}, transparent); box-shadow: 0px 5px 15px {mood_color}; margin-bottom: 20px; }}
+    .main-title {{ font-size: 45px !important; font-weight: 800; background: linear-gradient({mood_color}, #ffffff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-align: center; }}
+    div[data-testid="stChatMessage"]:has(span[aria-label="User Avatar icon"]) {{ flex-direction: row-reverse !important; }}
+    </style>
+    <div class="mood-ring"></div>
+    """, unsafe_allow_html=True)
+
+st.markdown('<p class="main-title">🚀 VISON AI STEM CORE</p>', unsafe_allow_html=True)
+
+if 'sid' not in st.session_state:
+    st.session_state.sid = str(uuid.uuid4())
+    db_q('INSERT OR IGNORE INTO chat_sessions VALUES (?,?,?,?,?)', (st.session_state.sid, st.session_state.username, "Initial Entry", datetime.datetime.now().strftime("%H:%M"), "💬"))
+if "messages" not in st.session_state: st.session_state.messages = []
+
+ai_av = f"data:image/png;base64,{get_64(AI_AVATAR_FILENAME)}" if get_64(AI_AVATAR_FILENAME) else "🤖"
+for m in st.session_state.messages:
+    with st.chat_message(m["role"], avatar=ai_av if m["role"]=="assistant" else "👤"): 
+        st.markdown(m["content"])
+
+user_in = st.chat_input("Evolve your thinking...")
+
+# Auto-Trigger Quiz via button
+if st.session_state.get('pending_quiz'):
+    user_in = "Generate a challenging 3-question STEM quiz based on our conversation. Use LaTeX for equations."
+    st.session_state.pending_quiz = False
+
+if user_in or uploaded_file:
+    client = Groq(api_key=st.secrets["GROQ_API_KEY"])
+    now = datetime.datetime.now().strftime("%H:%M")
+    
+    # Check for Graphing
+    if user_in and "plot" in user_in.lower():
+        eq = user_in.lower().split("plot")[-1].strip().replace("$", "")
+        fig = simple_plot(eq)
+        if fig: st.pyplot(fig)
+
+    # Payload Setup
+    model_to_use = "llama-3.2-11b-vision-preview" if uploaded_file else "llama-3.3-70b-versatile"
+    display_text = user_in if user_in else "Analyze this image."
+    
+    if uploaded_file:
+        img_b64 = base64.b64encode(uploaded_file.getvalue()).decode()
+        content_payload = [{"type": "text", "text": display_text}, {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}}]
+        with st.chat_message("user", avatar="👤"): st.image(uploaded_file, width=300); st.markdown(display_text)
+    else:
+        content_payload = display_text
+        with st.chat_message("user", avatar="👤"): st.markdown(user_in)
+
+    # Save User Message
+    db_q('INSERT INTO chat_log (username, role, content, session_id) VALUES (?,?,?,?)', (st.session_state.username, "user", display_text, st.session_state.sid))
+    db_q('UPDATE chat_sessions SET last_modified=? WHERE session_id=?', (now, st.session_state.sid))
+    st.session_state.messages.append({"role": "user", "content": display_text})
+
+    # AI Response
+    with st.chat_message("assistant", avatar=ai_av):
+        mem = db_q('SELECT secret_profile FROM users WHERE username=?', (st.session_state.username,), True)
+        profile = mem[0][0] if mem else "New Student"
+        sys_prompt = f"You are a {persona} fluent in {lang}. Use LaTeX ($) for all math. Student Context: {profile}"
+        
+        res = client.chat.completions.create(
+            model=model_to_use,
+            messages=[{"role": "system", "content": sys_prompt}] + [{"role": m["role"], "content": m["content"]} for m in st.session_state.messages[-8:]] + [{"role": "user", "content": content_payload}]
+        )
+        ans = res.choices[0].message.content
+        st.markdown(ans)
+        st.session_state.messages.append({"role": "assistant", "content": ans})
+        db_q('INSERT INTO chat_log (username, role, content, session_id) VALUES (?,?,?,?)', (st.session_state.username, "assistant", ans, st.session_state.sid))
+
+components.html("<script>window.parent.document.querySelectorAll('.stChatMessage').forEach(el => el.scrollIntoView({behavior:'smooth'}));</script>", height=0)
