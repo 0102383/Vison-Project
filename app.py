@@ -289,7 +289,8 @@ st.markdown(f"""
     <div class="mood-ring"></div>
     """, unsafe_allow_html=True)
 
-st.markdown('<p class="main-title">🚀 VISON AI STEM CORE</p>', unsafe_allow_html=True)
+# THE EMOJI NOW SHOWS UP IN THE MAIN TITLE!
+st.markdown(f'<p class="main-title">{current_mood} VISON AI STEM CORE</p>', unsafe_allow_html=True)
 
 if 'sid' not in st.session_state:
     st.session_state.sid = str(uuid.uuid4())
@@ -327,22 +328,4 @@ if user_in or uploaded_file:
         content_payload = display_text
         with st.chat_message("user", avatar="👤"): st.markdown(user_in)
 
-    db_q('INSERT INTO chat_log (username, role, content, session_id) VALUES (?,?,?,?)', (st.session_state.username, "user", display_text, st.session_state.sid))
-    db_q('UPDATE chat_sessions SET last_modified=? WHERE session_id=?', (now, st.session_state.sid))
-    st.session_state.messages.append({"role": "user", "content": display_text})
-
-    with st.chat_message("assistant", avatar=ai_av):
-        mem = db_q('SELECT secret_profile FROM users WHERE username=?', (st.session_state.username,), True)
-        profile = mem[0][0] if mem else "New Student"
-        sys_prompt = f"You are a {persona} fluent in {lang}. Use LaTeX ($) for all math. Student Context: {profile}"
-        
-        res = client.chat.completions.create(
-            model=model_to_use,
-            messages=[{"role": "system", "content": sys_prompt}] + [{"role": m["role"], "content": m["content"]} for m in st.session_state.messages[-8:]] + [{"role": "user", "content": content_payload}]
-        )
-        ans = res.choices[0].message.content
-        st.markdown(ans)
-        st.session_state.messages.append({"role": "assistant", "content": ans})
-        db_q('INSERT INTO chat_log (username, role, content, session_id) VALUES (?,?,?,?)', (st.session_state.username, "assistant", ans, st.session_state.sid))
-
-components.html("<script>window.parent.document.querySelectorAll('.stChatMessage').forEach(el => el.scrollIntoView({behavior:'smooth'}));</script>", height=0)
+    db_q('INSERT INTO chat_log (username, role, content, session)
