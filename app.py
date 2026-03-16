@@ -328,4 +328,4 @@ if user_in or uploaded_file:
         content_payload = display_text
         with st.chat_message("user", avatar="👤"): st.markdown(user_in)
 
-    db_q('INSERT INTO chat_log (username, role, content, session)
+db_q('INSERT INTO chat_log (username, role, content, session_id) VALUES (?,?,?,?)', (st.session_state.username, "user", display_text, st.session_state.sid))
