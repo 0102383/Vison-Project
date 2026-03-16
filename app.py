@@ -46,11 +46,11 @@ def create_evolution_pdf(user, power, evolution, history):
     
     pdf.set_font("Arial", 'B', 14)
     pdf.cell(0, 10, f"Student: {user.upper()}", ln=True)
-    pdf.cell(0, 10, f"Academic Power Level: {power}/100", ln=True)
+    pdf.cell(0, 10, f"Mental Power Level: {power}/100", ln=True)
     pdf.ln(5)
     
     pdf.set_font("Arial", 'B', 12)
-    pdf.cell(0, 10, "Mental Evolution & Blocks:", ln=True)
+    pdf.cell(0, 10, "Psychological Evolution & Blocks:", ln=True)
     pdf.set_font("Arial", '', 11)
     pdf.multi_cell(0, 8, str(evolution))
     pdf.ln(10)
@@ -67,18 +67,32 @@ def create_evolution_pdf(user, power, evolution, history):
 # --- PART 4: ANALYZER & GRAPHER ---
 def analyze_all(u, sid):
     logs = db_q('SELECT role, content FROM chat_log WHERE username=? AND session_id=? ORDER BY id DESC LIMIT 20', (u, sid), True)
-    if not logs: return "Incomplete Data", 0, "💬"
+    if not logs: return "No data yet. Student needs to interact more.", 0, "💬"
     h = " ".join([f"{r}: {c}" for r, c in logs])
     try:
         client = Groq(api_key=st.secrets["GROQ_API_KEY"])
-        evo = client.chat.completions.create(model="llama-3.1-8b-instant", messages=[{"role":"user","content":f"Emotional blocks summary: {h}"}])
-        pwr = client.chat.completions.create(model="llama-3.1-8b-instant", messages=[{"role":"user","content":f"Power 0-100 (num only): {h}"}])
-        mood = client.chat.completions.create(model="llama-3.1-8b-instant", messages=[{"role":"user","content":f"Pick 1 emoji (🧠,⚠️,🔥,✅,💬) for mood: {h}"}])
-        e, p, m = evo.choices[0].message.content, int(''.join(filter(str.isdigit, pwr.choices[0].message.content))), mood.choices[0].message.content.strip()[0]
+        
+        # 1. DEEP EMOTIONAL ANALYSIS
+        evo_sys = "You are an elite psychological AI. Analyze the user's underlying emotions, hidden frustrations, and mixed feelings based on this chat history. DO NOT summarize the chat. Provide a deep, 2-sentence psychological evaluation of their current emotional state and mental blocks."
+        evo = client.chat.completions.create(model="llama-3.1-8b-instant", messages=[{"role": "system", "content": evo_sys}, {"role":"user","content": f"Chat log: {h}"}])
+        
+        # 2. STRICT POWER LEVEL GRADING
+        pwr_sys = "Rate the user's 'Mental Power Level' from 1 to 100 based on their emotional depth, problem-solving, and focus in this chat. Basic greetings/small talk = 10-20. Frustration/Mixed Emotions = 40-50. Deep focus/Curiosity = 70-80. Massive breakthroughs = 90-100. RETURN ONLY A SINGLE NUMBER."
+        pwr = client.chat.completions.create(model="llama-3.1-8b-instant", messages=[{"role": "system", "content": pwr_sys}, {"role":"user","content": f"Chat log: {h}"}])
+        
+        # 3. MOOD RING EMOJI
+        mood_sys = "Pick EXACTLY 1 emoji that represents the user's core psychological state from this list: 🧠(Focused), ⚠️(Frustrated/Blocked), 🔥(Excited/High Energy), ✅(Resolved), 💬(Neutral/Talking), 😔(Sad/Drained), 😠(Angry). RETURN ONLY ONE EMOJI."
+        mood = client.chat.completions.create(model="llama-3.1-8b-instant", messages=[{"role": "system", "content": mood_sys}, {"role":"user","content": f"Chat log: {h}"}])
+        
+        e = evo.choices[0].message.content.strip()
+        p_text = ''.join(filter(str.isdigit, pwr.choices[0].message.content))
+        p = int(p_text) if p_text else 10 
+        m = mood.choices[0].message.content.strip()[0]
+        
         db_q('UPDATE chat_sessions SET mood_emoji=? WHERE session_id=?', (m, sid))
         db_q('UPDATE users SET secret_profile=? WHERE username=?', (e, u))
         return e, p, m
-    except: return "Engine Busy", 10, "⏳"
+    except: return "Engine Busy. Re-sync required.", 10, "⏳"
 
 def simple_plot(equation_str):
     try:
@@ -97,7 +111,7 @@ def simple_plot(equation_str):
     except: return None
 
 def get_mood_color(emoji):
-    mood_map = {"🧠": "#00d4ff", "⚠️": "#ff4b4b", "🔥": "#ffaa00", "✅": "#00ff88", "💬": "#a252ff"}
+    mood_map = {"🧠": "#00d4ff", "⚠️": "#ff4b4b", "🔥": "#ffaa00", "✅": "#00ff88", "💬": "#a252ff", "😔": "#4b6584", "😠": "#eb3b5a"}
     return mood_map.get(emoji, "#a252ff")
 
 # --- PART 5: GATEWAY (NEW EMAIL AUTHENTICATION FLOW) ---
@@ -289,7 +303,6 @@ for m in st.session_state.messages:
 
 user_in = st.chat_input("Evolve your thinking...")
 
-# Auto-Trigger Quiz via button
 if st.session_state.get('pending_quiz'):
     user_in = "Generate a challenging 3-question STEM quiz based on our conversation. Use LaTeX for equations."
     st.session_state.pending_quiz = False
@@ -298,13 +311,11 @@ if user_in or uploaded_file:
     client = Groq(api_key=st.secrets["GROQ_API_KEY"])
     now = datetime.datetime.now().strftime("%H:%M")
     
-    # Check for Graphing
     if user_in and "plot" in user_in.lower():
         eq = user_in.lower().split("plot")[-1].strip().replace("$", "")
         fig = simple_plot(eq)
         if fig: st.pyplot(fig)
 
-    # Payload Setup
     model_to_use = "llama-3.2-11b-vision-preview" if uploaded_file else "llama-3.3-70b-versatile"
     display_text = user_in if user_in else "Analyze this image."
     
@@ -316,12 +327,10 @@ if user_in or uploaded_file:
         content_payload = display_text
         with st.chat_message("user", avatar="👤"): st.markdown(user_in)
 
-    # Save User Message
     db_q('INSERT INTO chat_log (username, role, content, session_id) VALUES (?,?,?,?)', (st.session_state.username, "user", display_text, st.session_state.sid))
     db_q('UPDATE chat_sessions SET last_modified=? WHERE session_id=?', (now, st.session_state.sid))
     st.session_state.messages.append({"role": "user", "content": display_text})
 
-    # AI Response
     with st.chat_message("assistant", avatar=ai_av):
         mem = db_q('SELECT secret_profile FROM users WHERE username=?', (st.session_state.username,), True)
         profile = mem[0][0] if mem else "New Student"
