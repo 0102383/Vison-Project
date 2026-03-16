@@ -34,266 +34,88 @@ def init_db():
     db_q('''CREATE TABLE IF NOT EXISTS chat_log (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, role TEXT, content TEXT, session_id TEXT)''')
     db_q('''CREATE TABLE IF NOT EXISTS chat_sessions (session_id TEXT PRIMARY KEY, username TEXT, session_name TEXT, last_modified TEXT, mood_emoji TEXT DEFAULT '💬')''')
 
-# --- PART 3: REPORT ENGINE (PDF) ---
+# --- PART 3: REPORT ENGINE ---
 def create_evolution_pdf(user, power, evolution, history):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", 'B', 20)
     pdf.cell(200, 15, "VISON AI: EVOLUTION REPORT", ln=True, align='C')
-    pdf.set_font("Arial", 'I', 10)
-    pdf.cell(200, 10, f"Generated on: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}", ln=True, align='C')
     pdf.ln(10)
-    
-    pdf.set_font("Arial", 'B', 14)
-    pdf.cell(0, 10, f"Student: {user.upper()}", ln=True)
-    pdf.cell(0, 10, f"Mental Power Level: {power}/100", ln=True)
-    pdf.ln(5)
-    
     pdf.set_font("Arial", 'B', 12)
-    pdf.cell(0, 10, "Psychological Evolution & Blocks:", ln=True)
+    pdf.cell(0, 10, f"Student: {user.upper()} | Power Level: {power}/100", ln=True)
     pdf.set_font("Arial", '', 11)
     pdf.multi_cell(0, 8, str(evolution))
-    pdf.ln(10)
-    
-    pdf.set_font("Arial", 'B', 12)
-    pdf.cell(0, 10, "Recent Session History:", ln=True)
-    pdf.set_font("Arial", '', 10)
-    for m in history[-10:]:
-        role = "VISON" if m['role'] == "assistant" else "USER"
-        pdf.multi_cell(0, 6, f"{role}: {m['content']}\n")
-        
     return pdf.output(dest='S').encode('latin-1')
 
 # --- PART 4: ANALYZER & GRAPHER ---
 def analyze_all(u, sid):
     logs = db_q('SELECT role, content FROM chat_log WHERE username=? AND session_id=? ORDER BY id DESC LIMIT 20', (u, sid), True)
-    if not logs: return "No data yet. Student needs to interact more.", 0, "💬"
+    if not logs: return "No data yet.", 0, "💬"
     h = " ".join([f"{r}: {c}" for r, c in logs])
     try:
         client = Groq(api_key=st.secrets["GROQ_API_KEY"])
-        
-        # 1. DEEP EMOTIONAL ANALYSIS
-        evo_sys = "You are an elite psychological AI. Analyze the user's underlying emotions, hidden frustrations, and mixed feelings based on this chat history. DO NOT summarize the chat. Provide a deep, 2-sentence psychological evaluation of their current emotional state and mental blocks."
-        evo = client.chat.completions.create(model="llama-3.1-8b-instant", messages=[{"role": "system", "content": evo_sys}, {"role":"user","content": f"Chat log: {h}"}])
-        
-        # 2. STRICT POWER LEVEL GRADING
-        pwr_sys = "Rate the user's 'Mental Power Level' from 1 to 100 based on their emotional depth, problem-solving, and focus in this chat. Basic greetings/small talk = 10-20. Frustration/Mixed Emotions = 40-50. Deep focus/Curiosity = 70-80. Massive breakthroughs = 90-100. RETURN ONLY A SINGLE NUMBER."
-        pwr = client.chat.completions.create(model="llama-3.1-8b-instant", messages=[{"role": "system", "content": pwr_sys}, {"role":"user","content": f"Chat log: {h}"}])
-        
-        # 3. MOOD RING EMOJI
-        mood_sys = "Pick EXACTLY 1 emoji that represents the user's core psychological state from this list: 🧠(Focused), ⚠️(Frustrated/Blocked), 🔥(Excited/High Energy), ✅(Resolved), 💬(Neutral/Talking), 😔(Sad/Drained), 😠(Angry). RETURN ONLY ONE EMOJI."
-        mood = client.chat.completions.create(model="llama-3.1-8b-instant", messages=[{"role": "system", "content": mood_sys}, {"role":"user","content": f"Chat log: {h}"}])
-        
-        e = evo.choices[0].message.content.strip()
+        evo = client.chat.completions.create(model="llama-3.1-8b-instant", messages=[{"role": "system", "content": "Analyze user emotions in 2 sentences."}, {"role":"user","content": h}])
+        pwr = client.chat.completions.create(model="llama-3.1-8b-instant", messages=[{"role": "system", "content": "Return only a number 1-100."}, {"role":"user","content": h}])
         p_text = ''.join(filter(str.isdigit, pwr.choices[0].message.content))
-        p = int(p_text) if p_text else 10 
-        m = mood.choices[0].message.content.strip()[0]
-        
-        db_q('UPDATE chat_sessions SET mood_emoji=? WHERE session_id=?', (m, sid))
-        db_q('UPDATE users SET secret_profile=? WHERE username=?', (e, u))
-        return e, p, m
-    except: return "Engine Busy. Re-sync required.", 10, "⏳"
+        return evo.choices[0].message.content, int(p_text) if p_text else 10, "🧠"
+    except: return "Engine Busy.", 10, "⏳"
 
 def simple_plot(equation_str):
     try:
         x = np.linspace(-10, 10, 400)
-        safe_eq = equation_str.replace('^', '**').replace('sin', 'np.sin').replace('cos', 'np.cos').replace('tan', 'np.tan')
+        safe_eq = equation_str.replace('^', '**').replace('sin', 'np.sin').replace('cos', 'np.cos')
         y = eval(safe_eq)
-        fig, ax = plt.subplots()
-        ax.plot(x, y, color='#a252ff', linewidth=2)
-        ax.axhline(0, color='white', linewidth=0.5)
-        ax.axvline(0, color='white', linewidth=0.5)
-        ax.set_facecolor('#0e1117')
-        fig.patch.set_facecolor('#0e1117')
-        ax.tick_params(colors='white')
-        ax.grid(True, linestyle='--', alpha=0.3)
-        return fig
+        fig, ax = plt.subplots(); ax.plot(x, y, color='#a252ff'); return fig
     except: return None
 
 def get_mood_color(emoji):
-    mood_map = {"🧠": "#00d4ff", "⚠️": "#ff4b4b", "🔥": "#ffaa00", "✅": "#00ff88", "💬": "#a252ff", "😔": "#4b6584", "😠": "#eb3b5a"}
+    mood_map = {"🧠": "#00d4ff", "⚠️": "#ff4b4b", "🔥": "#ffaa00", "✅": "#00ff88", "💬": "#a252ff"}
     return mood_map.get(emoji, "#a252ff")
 
-# --- PART 5: GATEWAY (NEW EMAIL AUTHENTICATION FLOW) ---
+# --- PART 5: UI SETUP ---
 st.set_page_config(page_title="VISON AI STEM", layout="wide")
 init_db()
 
 if 'logged_in' not in st.session_state: st.session_state.logged_in = False
 
 if not st.session_state.logged_in:
-    lb = get_64(LOGO_FILENAME)
-    if lb: st.markdown(f'<center><img src="data:image/jpeg;base64,{lb}" width="180"></center>', unsafe_allow_html=True)
-    st.markdown("<h1 style='text-align: center; color: white;'>VISON CORE</h1>", unsafe_allow_html=True)
-    
-    auth_mode = st.radio("Access Portal", ["Log In", "Create Account", "Reset Password"], horizontal=True)
-    
-    if auth_mode == "Log In":
-        st.subheader("Welcome Back")
-        identifier = st.text_input("Email (or Admin ID)")
-        p = st.text_input("Security Key", type="password")
-        if st.button("Unlock Core"):
-            if identifier and p:
-                if identifier == ADMIN:
-                    res = db_q('SELECT password, username FROM users WHERE username=?', (identifier,), True)
-                else:
-                    res = db_q('SELECT password, username FROM users WHERE email=?', (identifier.lower(),), True)
-                
-                if res and res[0][0] == p:
-                    st.session_state.logged_in = True
-                    st.session_state.username = res[0][1] 
-                    st.rerun()
-                else:
-                    st.error("❌ Invalid Email/Admin ID or Security Key.")
-            else:
-                st.warning("⚠️ Please enter your credentials.")
-                
-    elif auth_mode == "Create Account":
-        st.subheader("Initialize New Student")
-        new_u = st.text_input("Choose a User ID (Display Name)")
-        new_e = st.text_input("Email Address")
-        new_p = st.text_input("Create Security Key", type="password")
-        new_p2 = st.text_input("Confirm Security Key", type="password")
-        
-        if st.button("Register Account"):
-            if new_u and new_e and new_p and new_p2:
-                if "@" not in new_e:
-                    st.error("❌ Please enter a valid email address.")
-                elif new_p == new_p2:
-                    res = db_q('SELECT username FROM users WHERE username=? OR email=?', (new_u.lower(), new_e.lower()), True)
-                    if res:
-                        st.error("❌ User ID or Email is already registered.")
-                    else:
-                        db_q('INSERT INTO users (username, password, email, interests, level) VALUES (?,?,?,?,?)', (new_u.lower(), new_p, new_e.lower(), "STEM", "HS"))
-                        st.success("✅ Account successfully created! Please switch to 'Log In'.")
-                else:
-                    st.error("❌ Security Keys do not match.")
-            else:
-                st.warning("⚠️ Please fill in all fields.")
-                
-    elif auth_mode == "Reset Password":
-        st.subheader("System Override: Reset Key")
-        r_e = st.text_input("Registered Email")
-        r_p = st.text_input("New Security Key", type="password")
-        r_p2 = st.text_input("Confirm New Key", type="password")
-        
-        if st.button("Execute Reset"):
-            if r_e and r_p and r_p2:
-                if r_p == r_p2:
-                    res = db_q('SELECT username FROM users WHERE email=?', (r_e.lower(),), True)
-                    if res:
-                        db_q('UPDATE users SET password=? WHERE email=?', (r_p, r_e.lower()))
-                        st.success("✅ Security Key updated! Switch to 'Log In'.")
-                    else:
-                        st.error("❌ Email not found in the system.")
-                else:
-                    st.error("❌ Security Keys do not match.")
-            else:
-                st.warning("⚠️ Please fill in all fields.")
+    st.markdown("<h1 style='text-align: center;'>VISON CORE</h1>", unsafe_allow_html=True)
+    identifier = st.text_input("Email or Admin ID")
+    p = st.text_input("Security Key", type="password")
+    if st.button("Unlock"):
+        res = db_q('SELECT password, username FROM users WHERE email=? OR username=?', (identifier.lower(), identifier), True)
+        if res and res[0][0] == p:
+            st.session_state.logged_in = True
+            st.session_state.username = res[0][1]
+            st.rerun()
+    st.stop()
 
-    st.stop() 
-
-# --- PART 6: SIDEBAR & PRODUCTIVITY SUITE ---
+# --- PART 6: SIDEBAR ---
 with st.sidebar:
     st.title(f"🚀 {st.session_state.username.upper()}")
     if st.button("Logout"): st.session_state.clear(); st.rerun()
     st.divider()
-    
-    # 🔬 SCIENTIFIC CALCULATOR
-    with st.expander("🔬 Scientific Calculator"):
-        st.markdown("<small><b>Functions:</b> <code>sin()</code>, <code>cos()</code>, <code>tan()</code>, <code>log()</code>, <code>ln()</code>, <code>sqrt()</code>, <code>exp()</code><br><b>Constants:</b> <code>pi</code>, <code>e</code> | <b>Power:</b> <code>^</code></small>", unsafe_allow_html=True)
-        calc_input = st.text_input("Expression:")
-        if calc_input:
-            try:
-                safe_calc = calc_input.lower().replace('^', '**').replace('sin', 'np.sin').replace('cos', 'np.cos').replace('tan', 'np.tan').replace('sqrt', 'np.sqrt').replace('pi', 'np.pi').replace('log', 'np.log10').replace('ln', 'np.log').replace('exp', 'np.exp')
-                safe_calc = re.sub(r'\be\b', 'np.e', safe_calc)
-                ans = eval(safe_calc)
-                st.success(f"= {ans}")
-            except:
-                st.error("Invalid Math")
-
-    # 🧠 MEMORY BUTTON
-    if st.button("🗑️ Clear Memory"):
-        if 'sid' in st.session_state:
-            db_q('DELETE FROM chat_log WHERE session_id=?', (st.session_state.sid,))
-            st.session_state.messages = []
-            st.success("Memory Wiped")
-            st.rerun()
-
-    # 📝 QUIZ BUTTON
-    if st.button("🧩 Generate Quiz"):
-        st.session_state.pending_quiz = True
-
-    # ⏱️ TIMER BUTTON
-    with st.expander("⏱️ Pomodoro Timer"):
-        t_min = st.number_input("Study Minutes:", 1, 120, 25)
-        if st.button("Start Timer"):
-            ph = st.empty()
-            for i in range(t_min * 60, 0, -1):
-                mins, secs = divmod(i, 60)
-                ph.metric("Focus Time", f"{mins:02d}:{secs:02d}")
-                time.sleep(1)
-            st.success("Focus Session Done!")
-            st.balloons()
-
-    st.divider()
-    persona = st.selectbox("Persona", ["Strict Professor", "Friendly Mentor", "Quirky Scientist"])
+    persona = st.selectbox("Persona", ["Strict Professor", "Friendly Mentor"])
     lang = st.selectbox("Language", ["English", "Japanese", "Bahasa Melayu"])
     uploaded_file = st.file_uploader("📷 Solve STEM Equation", type=['png', 'jpg', 'jpeg'])
     
-    st.divider()
-    sessions = db_q('SELECT session_id, session_name, last_modified, mood_emoji FROM chat_sessions WHERE username=? ORDER BY last_modified DESC', (st.session_state.username,), True)
+    sessions = db_q('SELECT session_id, session_name FROM chat_sessions WHERE username=? ORDER BY last_modified DESC', (st.session_state.username,), True)
     if st.button("➕ New Session"):
         nid = str(uuid.uuid4())
-        db_q('INSERT INTO chat_sessions VALUES (?,?,?,?,?)', (nid, st.session_state.username, "New Session", datetime.datetime.now().strftime("%H:%M"), "💬"))
-        st.session_state.sid, st.session_state.messages = nid, []; st.rerun()
+        db_q('INSERT INTO chat_sessions (session_id, username, session_name, last_modified) VALUES (?,?,?,?)', (nid, st.session_state.username, "New Session", "Now"))
+        st.session_state.sid = nid; st.rerun()
     
     if sessions:
-        s_dict = {f"{s[3]} {s[1]}": s[0] for s in sessions}
-        sel = st.selectbox("Timeline:", list(s_dict.keys()))
+        s_dict = {s[1]: s[0] for s in sessions}
+        sel = st.selectbox("Sessions", list(s_dict.keys()))
         st.session_state.sid = s_dict[sel]
         st.session_state.messages = [{"role":r, "content":c} for r,c in db_q('SELECT role, content FROM chat_log WHERE session_id=?', (st.session_state.sid,), True)]
 
-    # 🕵️ ADMIN VAULT
-    if st.session_state.username == ADMIN:
-        st.divider()
-        with st.expander("🕵️ ADMIN VAULT"):
-            if st.button("⚡ Sync Evolution"):
-                e, pw, mo = analyze_all(st.session_state.username, st.session_state.sid)
-                st.session_state.evo, st.session_state.pwr = e, pw
-                st.rerun()
-            
-            if "pwr" in st.session_state:
-                st.metric("Power Level", f"{st.session_state.pwr}/100")
-                pdf_data = create_evolution_pdf(st.session_state.username, st.session_state.pwr, st.session_state.evo, st.session_state.messages)
-                st.download_button("📄 Download Evolution Report", data=pdf_data, file_name=f"vison_report_{st.session_state.username}.pdf", mime="application/pdf")
-                st.write(f"**Analysis:** {st.session_state.evo}")
-
-            if st.button("🗑️ NUCLEAR DATA WIPE"):
-                db_q('DELETE FROM chat_log WHERE username=?', (st.session_state.username,))
-                db_q('DELETE FROM chat_sessions WHERE username=?', (st.session_state.username,))
-                st.rerun()
-
-# --- PART 7: MAIN CHAT & MOOD RING ---
-current_mood = "💬"
-if 'sid' in st.session_state:
-    res = db_q('SELECT mood_emoji FROM chat_sessions WHERE session_id=?', (st.session_state.sid,), True)
-    if res: current_mood = res[0][0]
-mood_color = get_mood_color(current_mood)
-
-st.markdown(f"""
-    <style>
-    .mood-ring {{ height: 5px; width: 100%; background: linear-gradient(90deg, transparent, {mood_color}, transparent); box-shadow: 0px 5px 15px {mood_color}; margin-bottom: 20px; }}
-    .main-title {{ font-size: 45px !important; font-weight: 800; background: linear-gradient({mood_color}, #ffffff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-align: center; }}
-    div[data-testid="stChatMessage"]:has(span[aria-label="User Avatar icon"]) {{ flex-direction: row-reverse !important; }}
-    </style>
-    <div class="mood-ring"></div>
-    """, unsafe_allow_html=True)
-
-st.markdown(f'<p class="main-title">{current_mood} VISON AI STEM CORE</p>', unsafe_allow_html=True)
-
+# --- PART 7: CHAT LOGIC ---
 if 'sid' not in st.session_state:
     st.session_state.sid = str(uuid.uuid4())
-    db_q('INSERT OR IGNORE INTO chat_sessions VALUES (?,?,?,?,?)', (st.session_state.sid, st.session_state.username, "Initial Entry", datetime.datetime.now().strftime("%H:%M"), "💬"))
+    db_q('INSERT OR IGNORE INTO chat_sessions (session_id, username, session_name, last_modified) VALUES (?,?,?,?)', (st.session_state.sid, st.session_state.username, "Main Chat", "Now"))
+
 if "messages" not in st.session_state: st.session_state.messages = []
 
 ai_av = f"data:image/png;base64,{get_64(AI_AVATAR_FILENAME)}" if get_64(AI_AVATAR_FILENAME) else "🤖"
@@ -303,57 +125,40 @@ for m in st.session_state.messages:
 
 user_in = st.chat_input("Evolve your thinking...")
 
-if st.session_state.get('pending_quiz'):
-    user_in = "Generate a challenging 3-question STEM quiz based on our conversation. Use LaTeX for equations."
-    st.session_state.pending_quiz = False
-
+# --- THE FIX: PERFECTLY ALIGNED LOGIC BLOCK ---
 if user_in or uploaded_file:
     client = Groq(api_key=st.secrets["GROQ_API_KEY"])
     now = datetime.datetime.now().strftime("%H:%M")
     
-  if user_in or uploaded_file:
-    client = Groq(api_key=st.secrets["GROQ_API_KEY"])
-    now = datetime.datetime.now().strftime("%H:%M")
-    
-    if user_in and "plot" in user_in.lower():
-        eq = user_in.lower().split("plot")[-1].strip().replace("$", "")
-        fig = simple_plot(eq)
-        if fig: st.pyplot(fig)
-
     model_to_use = "llama-3.2-11b-vision-preview" if uploaded_file else "llama-3.3-70b-versatile"
     display_text = user_in if user_in else "Analyze this image."
     
     if uploaded_file:
-        # 🚨 FIX 1: Dynamically read the correct image type (PNG/JPEG)
         mime_type = uploaded_file.type 
         img_b64 = base64.b64encode(uploaded_file.getvalue()).decode()
         content_payload = [{"type": "text", "text": display_text}, {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{img_b64}"}}]
-        with st.chat_message("user", avatar="👤"): st.image(uploaded_file, width=300); st.markdown(display_text)
+        with st.chat_message("user", avatar="👤"):
+            st.image(uploaded_file, width=300)
+            st.markdown(display_text)
     else:
-        with st.chat_message("user", avatar="👤"): st.markdown(display_text)
+        content_payload = display_text
+        with st.chat_message("user", avatar="👤"):
+            st.markdown(display_text)
 
     db_q('INSERT INTO chat_log (username, role, content, session_id) VALUES (?,?,?,?)', (st.session_state.username, "user", display_text, st.session_state.sid))
-    db_q('UPDATE chat_sessions SET last_modified=? WHERE session_id=?', (now, st.session_state.sid))
     st.session_state.messages.append({"role": "user", "content": display_text})
 
     with st.chat_message("assistant", avatar=ai_av):
-        mem = db_q('SELECT secret_profile FROM users WHERE username=?', (st.session_state.username,), True)
-        profile = mem[0][0] if mem else "New Student"
-        sys_prompt = f"You are a {persona} fluent in {lang}. Use LaTeX ($) for all math. Student Context: {profile}"
-        
-        # 🚨 FIX 2: We use [-8:-1] to EXCLUDE the text we just appended to memory. No more double user messages!
-        history_for_api = [{"role": m["role"], "content": m["content"]} for m in st.session_state.messages[-8:-1]]
+        sys_prompt = f"You are a {persona} in {lang}. Use LaTeX ($) for math."
+        # Use history excluding the last message to avoid duplication
+        hist = [{"role": m["role"], "content": m["content"]} for m in st.session_state.messages[-8:-1]]
         
         if uploaded_file:
-            content_payload[0]["text"] = f"System Instructions: {sys_prompt}\n\nUser Task: {display_text}"
-            final_messages = history_for_api + [{"role": "user", "content": content_payload}]
+            final_messages = hist + [{"role": "user", "content": content_payload}]
         else:
-            final_messages = [{"role": "system", "content": sys_prompt}] + history_for_api + [{"role": "user", "content": display_text}]
+            final_messages = [{"role": "system", "content": sys_prompt}] + hist + [{"role": "user", "content": display_text}]
         
-        res = client.chat.completions.create(
-            model=model_to_use,
-            messages=final_messages
-        )
+        res = client.chat.completions.create(model=model_to_use, messages=final_messages)
         ans = res.choices[0].message.content
         st.markdown(ans)
         st.session_state.messages.append({"role": "assistant", "content": ans})
