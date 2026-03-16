@@ -289,7 +289,6 @@ st.markdown(f"""
     <div class="mood-ring"></div>
     """, unsafe_allow_html=True)
 
-# THE EMOJI NOW SHOWS UP IN THE MAIN TITLE!
 st.markdown(f'<p class="main-title">{current_mood} VISON AI STEM CORE</p>', unsafe_allow_html=True)
 
 if 'sid' not in st.session_state:
@@ -312,10 +311,6 @@ if user_in or uploaded_file:
     client = Groq(api_key=st.secrets["GROQ_API_KEY"])
     now = datetime.datetime.now().strftime("%H:%M")
     
- if user_in or uploaded_file:
-    client = Groq(api_key=st.secrets["GROQ_API_KEY"])
-    now = datetime.datetime.now().strftime("%H:%M")
-    
     if user_in and "plot" in user_in.lower():
         eq = user_in.lower().split("plot")[-1].strip().replace("$", "")
         fig = simple_plot(eq)
@@ -332,7 +327,6 @@ if user_in or uploaded_file:
         content_payload = display_text
         with st.chat_message("user", avatar="👤"): st.markdown(user_in)
 
-    # 🚨 Perfectly aligned database inserts!
     db_q('INSERT INTO chat_log (username, role, content, session_id) VALUES (?,?,?,?)', (st.session_state.username, "user", display_text, st.session_state.sid))
     db_q('UPDATE chat_sessions SET last_modified=? WHERE session_id=?', (now, st.session_state.sid))
     st.session_state.messages.append({"role": "user", "content": display_text})
