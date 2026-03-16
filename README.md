@@ -6,7 +6,7 @@ Welcome to the **VISON AI STEM Core**. This isn't just a chatbot; it is a secure
 
 ## ✨ Core Features
 
-* 🔐 **Secure Authentication Gateway:** Robust login system requiring a registered email and security key, with a dedicated system override (password reset) and a secured Admin Vault.
+* 🔐 **Secure Authentication Gateway:** Robust login system requiring a registered email and security key, with a dedicated system override.
 * 🧠 **Multi-Modal AI Engine:** Powered by Groq's lightning-fast inference using `llama-3.3-70b-versatile` for deep reasoning and `llama-3.2-11b-vision-preview` for analyzing uploaded images of complex equations or diagrams.
 * 📈 **Evolution Tracking & PDF Reports:** The system tracks user interactions to calculate an "Academic Power Level" and analyzes emotional/learning blocks. Admins can generate and download comprehensive PDF Evolution Reports.
 * 🔬 **Scientific Calculator & Real-Time Graphing:** A built-in scientific calculator supporting advanced trigonometry (`sin`, `cos`, `tan`), logarithms, and constants. Users can also type "plot [equation]" in the chat to generate dynamic matplotlib graphs.
