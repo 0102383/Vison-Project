@@ -311,6 +311,10 @@ if user_in or uploaded_file:
     client = Groq(api_key=st.secrets["GROQ_API_KEY"])
     now = datetime.datetime.now().strftime("%H:%M")
     
+  if user_in or uploaded_file:
+    client = Groq(api_key=st.secrets["GROQ_API_KEY"])
+    now = datetime.datetime.now().strftime("%H:%M")
+    
     if user_in and "plot" in user_in.lower():
         eq = user_in.lower().split("plot")[-1].strip().replace("$", "")
         fig = simple_plot(eq)
@@ -320,12 +324,13 @@ if user_in or uploaded_file:
     display_text = user_in if user_in else "Analyze this image."
     
     if uploaded_file:
+        # 🚨 FIX 1: Dynamically read the correct image type (PNG/JPEG)
+        mime_type = uploaded_file.type 
         img_b64 = base64.b64encode(uploaded_file.getvalue()).decode()
-        content_payload = [{"type": "text", "text": display_text}, {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}}]
+        content_payload = [{"type": "text", "text": display_text}, {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{img_b64}"}}]
         with st.chat_message("user", avatar="👤"): st.image(uploaded_file, width=300); st.markdown(display_text)
     else:
-        content_payload = display_text
-        with st.chat_message("user", avatar="👤"): st.markdown(user_in)
+        with st.chat_message("user", avatar="👤"): st.markdown(display_text)
 
     db_q('INSERT INTO chat_log (username, role, content, session_id) VALUES (?,?,?,?)', (st.session_state.username, "user", display_text, st.session_state.sid))
     db_q('UPDATE chat_sessions SET last_modified=? WHERE session_id=?', (now, st.session_state.sid))
@@ -336,11 +341,14 @@ if user_in or uploaded_file:
         profile = mem[0][0] if mem else "New Student"
         sys_prompt = f"You are a {persona} fluent in {lang}. Use LaTeX ($) for all math. Student Context: {profile}"
         
+        # 🚨 FIX 2: We use [-8:-1] to EXCLUDE the text we just appended to memory. No more double user messages!
+        history_for_api = [{"role": m["role"], "content": m["content"]} for m in st.session_state.messages[-8:-1]]
+        
         if uploaded_file:
             content_payload[0]["text"] = f"System Instructions: {sys_prompt}\n\nUser Task: {display_text}"
-            final_messages = [{"role": m["role"], "content": m["content"]} for m in st.session_state.messages[-8:]] + [{"role": "user", "content": content_payload}]
+            final_messages = history_for_api + [{"role": "user", "content": content_payload}]
         else:
-            final_messages = [{"role": "system", "content": sys_prompt}] + [{"role": m["role"], "content": m["content"]} for m in st.session_state.messages[-8:]] + [{"role": "user", "content": content_payload}]
+            final_messages = [{"role": "system", "content": sys_prompt}] + history_for_api + [{"role": "user", "content": display_text}]
         
         res = client.chat.completions.create(
             model=model_to_use,
