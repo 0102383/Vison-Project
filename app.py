@@ -312,6 +312,10 @@ if user_in or uploaded_file:
     client = Groq(api_key=st.secrets["GROQ_API_KEY"])
     now = datetime.datetime.now().strftime("%H:%M")
     
+ if user_in or uploaded_file:
+    client = Groq(api_key=st.secrets["GROQ_API_KEY"])
+    now = datetime.datetime.now().strftime("%H:%M")
+    
     if user_in and "plot" in user_in.lower():
         eq = user_in.lower().split("plot")[-1].strip().replace("$", "")
         fig = simple_plot(eq)
@@ -328,4 +332,29 @@ if user_in or uploaded_file:
         content_payload = display_text
         with st.chat_message("user", avatar="👤"): st.markdown(user_in)
 
-db_q('INSERT INTO chat_log (username, role, content, session_id) VALUES (?,?,?,?)', (st.session_state.username, "user", display_text, st.session_state.sid))
+    # 🚨 Perfectly aligned database inserts!
+    db_q('INSERT INTO chat_log (username, role, content, session_id) VALUES (?,?,?,?)', (st.session_state.username, "user", display_text, st.session_state.sid))
+    db_q('UPDATE chat_sessions SET last_modified=? WHERE session_id=?', (now, st.session_state.sid))
+    st.session_state.messages.append({"role": "user", "content": display_text})
+
+    with st.chat_message("assistant", avatar=ai_av):
+        mem = db_q('SELECT secret_profile FROM users WHERE username=?', (st.session_state.username,), True)
+        profile = mem[0][0] if mem else "New Student"
+        sys_prompt = f"You are a {persona} fluent in {lang}. Use LaTeX ($) for all math. Student Context: {profile}"
+        
+        if uploaded_file:
+            content_payload[0]["text"] = f"System Instructions: {sys_prompt}\n\nUser Task: {display_text}"
+            final_messages = [{"role": m["role"], "content": m["content"]} for m in st.session_state.messages[-8:]] + [{"role": "user", "content": content_payload}]
+        else:
+            final_messages = [{"role": "system", "content": sys_prompt}] + [{"role": m["role"], "content": m["content"]} for m in st.session_state.messages[-8:]] + [{"role": "user", "content": content_payload}]
+        
+        res = client.chat.completions.create(
+            model=model_to_use,
+            messages=final_messages
+        )
+        ans = res.choices[0].message.content
+        st.markdown(ans)
+        st.session_state.messages.append({"role": "assistant", "content": ans})
+        db_q('INSERT INTO chat_log (username, role, content, session_id) VALUES (?,?,?,?)', (st.session_state.username, "assistant", ans, st.session_state.sid))
+
+components.html("<script>window.parent.document.querySelectorAll('.stChatMessage').forEach(el => el.scrollIntoView({behavior:'smooth'}));</script>", height=0)
