@@ -116,7 +116,7 @@ with st.sidebar:
     if st.button("Logout"): st.session_state.clear(); st.rerun()
     
     st.divider()
-    render_casio_calculator() # The Casio UI lives here now!
+    render_casio_calculator()
     st.divider()
 
     persona = st.selectbox("Persona", ["Strict Professor", "Friendly Mentor"])
@@ -135,7 +135,7 @@ with st.sidebar:
         st.session_state.sid = s_dict[sel]
         st.session_state.messages = [{"role":r, "content":c} for r,c in db_q('SELECT role, content FROM chat_log WHERE session_id=?', (st.session_state.sid,), True)]
 
-# --- PART 5: CHAT LOGIC ---
+# --- PART 5: CHAT LOGIC & EVOLUTION ENGINE ---
 if 'sid' not in st.session_state:
     st.session_state.sid = str(uuid.uuid4())
     db_q('INSERT OR IGNORE INTO chat_sessions (session_id, username, session_name, last_modified) VALUES (?,?,?,?)', (st.session_state.sid, st.session_state.username, "Main Chat", "Now"))
@@ -147,55 +147,74 @@ for m in st.session_state.messages:
     with st.chat_message(m["role"], avatar=ai_av if m["role"]=="assistant" else "👤"): 
         st.markdown(m["content"])
 
-user_in = st.chat_input("Evolve your thinking...")
+user_in = st.chat_input("Ask a question, or type 'Evolve: <command>'...")
 
-# --- THE FIX: SAFETY NET FOR GROQ API ---
+# ==========================================
+# 🧬 THE EVOLUTION ENGINE: STAGING AREA
+# ==========================================
+if st.session_state.get("pending_mutation"):
+    st.divider()
+    st.markdown("## 🔬 Review Proposed DNA Mutation")
+    st.warning("⚠️ **WARNING:** Approving this will permanently overwrite the `app.py` file on your server.")
+    
+    # Display the AI's proposed new script
+    st.code(st.session_state.pending_mutation, language="python")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("⚠️ APPROVE & OVERWRITE APP", type="primary", use_container_width=True):
+            try:
+                # Overwrite the file with the new DNA
+                with open(__file__, "w", encoding="utf-8") as file:
+                    file.write(st.session_state.pending_mutation)
+                del st.session_state["pending_mutation"]
+                st.success("✅ App successfully evolved! Rebooting core...")
+                time.sleep(2)
+                st.rerun()
+            except Exception as e:
+                st.error(f"Failed to write file: {e}")
+    with col2:
+        if st.button("❌ REJECT MUTATION", use_container_width=True):
+            del st.session_state["pending_mutation"]
+            st.info("Evolution aborted. Core remains unchanged.")
+            st.rerun()
+            
+    st.stop() # Halt the rest of the app while reviewing!
+
+# ==========================================
+# NORMAL CHAT & EVOLUTION TRIGGER
+# ==========================================
 if user_in or uploaded_file:
-    # Check if key exists in secrets before trying to use it
     if "GROQ_API_KEY" not in st.secrets:
-        st.error("🚨 **API Key Missing!** Please go to Streamlit Cloud Dashboard -> Settings -> Secrets and add `GROQ_API_KEY = 'your_key_here'`.")
+        st.error("🚨 **API Key Missing!** Please add `GROQ_API_KEY` to Streamlit Secrets.")
         st.stop()
 
-    try:
-        client = Groq(api_key=st.secrets["GROQ_API_KEY"])
-        
-        model_to_use = "llama-3.2-11b-vision-preview" if uploaded_file else "llama-3.3-70b-versatile"
-        display_text = user_in if user_in else "Analyze this image."
-        
-        if uploaded_file:
-            mime_type = uploaded_file.type 
-            img_b64 = base64.b64encode(uploaded_file.getvalue()).decode()
-            content_payload = [{"type": "text", "text": display_text}, {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{img_b64}"}}]
-            with st.chat_message("user", avatar="👤"):
-                st.image(uploaded_file, width=300)
-                st.markdown(display_text)
-        else:
-            content_payload = display_text
-            with st.chat_message("user", avatar="👤"):
-                st.markdown(display_text)
+    client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 
-        db_q('INSERT INTO chat_log (username, role, content, session_id) VALUES (?,?,?,?)', (st.session_state.username, "user", display_text, st.session_state.sid))
-        st.session_state.messages.append({"role": "user", "content": display_text})
-
-        with st.chat_message("assistant", avatar=ai_av):
-            sys_prompt = f"You are a {persona} in {lang}. Use LaTeX ($) for math."
-            hist = [{"role": m["role"], "content": m["content"]} for m in st.session_state.messages[-8:-1]]
+    # 🧬 INTERCEPT: IS IT AN EVOLVE COMMAND?
+    if user_in and user_in.lower().startswith("evolve:"):
+        with st.spinner("🧬 Synthesizing new application DNA... Please wait (this takes about 10-20 seconds)."):
+            with open(__file__, "r", encoding="utf-8") as file:
+                current_code = file.read()
+                
+            system_prompt = """
+            You are an auto-evolving AI expert in Python and Streamlit.
+            The user wants to add a feature or alter the current script.
+            You MUST output the ENTIRE, COMPLETE updated Python code for the app.
+            DO NOT output explanations, introductory text, or conversational text.
+            Output ONLY raw, valid, properly indented Python code. Do not wrap in ```python blocks if possible, but if you do, they will be stripped.
+            """
             
-            if uploaded_file:
-                final_messages = hist + [{"role": "user", "content": content_payload}]
-            else:
-                final_messages = [{"role": "system", "content": sys_prompt}] + hist + [{"role": "user", "content": display_text}]
-            
-            res = client.chat.completions.create(model=model_to_use, messages=final_messages)
-            ans = res.choices[0].message.content
-            st.markdown(ans)
-            st.session_state.messages.append({"role": "assistant", "content": ans})
-            db_q('INSERT INTO chat_log (username, role, content, session_id) VALUES (?,?,?,?)', (st.session_state.username, "assistant", ans, st.session_state.sid))
-
-    except Exception as e:
-        if "AuthenticationError" in str(e) or "401" in str(e):
-            st.error("🚨 **Authentication Failed!** Your Groq API key is invalid or expired. Please generate a new one at console.groq.com and update your Streamlit Secrets.")
-        else:
-            st.error(f"⚠️ **Engine Error:** {e}")
-
-components.html("<script>window.parent.document.querySelectorAll('.stChatMessage').forEach(el => el.scrollIntoView({behavior:'smooth'}));</script>", height=0) 
+            try:
+                res = client.chat.completions.create(
+                    model="llama-3.3-70b-versatile",
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": f"Current Code:\n{current_code}\n\nRequested Evolution: {user_in}"}
+                    ]
+                )
+                
+                proposed_code = res.choices[0].message.content.strip()
+                
+                # Clean up markdown if the AI includes it
+                if proposed_code.startswith("
