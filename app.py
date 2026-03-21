@@ -247,7 +247,7 @@ if user_in or uploaded_file:
             The user wants to add a feature or alter the current script.
             You MUST output the ENTIRE, COMPLETE updated Python code for the app.
             DO NOT output explanations, introductory text, or conversational text.
-            Output ONLY raw, valid, properly indented Python code. Do not wrap in ```python blocks if possible, but if you do, they will be stripped.
+            Output ONLY raw, valid, properly indented Python code.
             """
             
             try:
@@ -261,9 +261,5 @@ if user_in or uploaded_file:
                 
                 proposed_code = res.choices[0].message.content.strip()
                 
+                # Robust stripping of markdown to prevent syntax errors
                 if proposed_code.startswith("
-http://googleusercontent.com/immersive_entry_chip/0
-http://googleusercontent.com/immersive_entry_chip/1
-http://googleusercontent.com/immersive_entry_chip/2
-
-Commit this, let the server reboot, and your picture and account tools will be back on screen alongside your calculator and evolution engine!
