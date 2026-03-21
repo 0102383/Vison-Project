@@ -90,24 +90,71 @@ def render_casio_calculator():
     """
     components.html(CALC_HTML, height=400)
 
-# --- PART 3: UI SETUP & AUTH ---
+# --- PART 3: UI SETUP & AUTH (RESTORED GATEWAY) ---
 st.set_page_config(page_title="VISON AI STEM", layout="wide")
 init_db()
 
 if 'logged_in' not in st.session_state: st.session_state.logged_in = False
 
 if not st.session_state.logged_in:
+    lb = get_64(LOGO_FILENAME)
+    if lb: st.markdown(f'<center><img src="data:image/jpeg;base64,{lb}" width="180"></center>', unsafe_allow_html=True)
+    
     st.markdown("<h1 style='text-align: center;'>VISON CORE</h1>", unsafe_allow_html=True)
-    identifier = st.text_input("Email or Admin ID")
-    p = st.text_input("Security Key", type="password")
-    if st.button("Unlock"):
-        res = db_q('SELECT password, username FROM users WHERE email=? OR username=?', (identifier.lower(), identifier), True)
-        if res and res[0][0] == p:
-            st.session_state.logged_in = True
-            st.session_state.username = res[0][1]
-            st.rerun()
-        else:
-            st.error("Invalid Credentials.")
+    
+    auth_mode = st.radio("Access Portal", ["Log In", "Create Account", "Reset Password"], horizontal=True)
+    
+    if auth_mode == "Log In":
+        st.subheader("Welcome Back")
+        identifier = st.text_input("Email (or Admin ID)")
+        p = st.text_input("Security Key", type="password")
+        if st.button("Unlock Core"):
+            if identifier and p:
+                res = db_q('SELECT password, username FROM users WHERE email=? OR username=?', (identifier.lower(), identifier), True)
+                if res and res[0][0] == p:
+                    st.session_state.logged_in = True
+                    st.session_state.username = res[0][1] 
+                    st.rerun()
+                else:
+                    st.error("❌ Invalid Credentials.")
+            else: st.warning("⚠️ Please fill in all fields.")
+                
+    elif auth_mode == "Create Account":
+        st.subheader("Initialize New Student")
+        new_u = st.text_input("Choose a User ID")
+        new_e = st.text_input("Email Address")
+        new_p = st.text_input("Create Security Key", type="password")
+        new_p2 = st.text_input("Confirm Security Key", type="password")
+        
+        if st.button("Register Account"):
+            if new_u and new_e and new_p and new_p2:
+                if "@" not in new_e: st.error("❌ Please enter a valid email address.")
+                elif new_p == new_p2:
+                    res = db_q('SELECT username FROM users WHERE username=? OR email=?', (new_u.lower(), new_e.lower()), True)
+                    if res: st.error("❌ User ID or Email already registered.")
+                    else:
+                        db_q('INSERT INTO users (username, password, email, interests, level) VALUES (?,?,?,?,?)', (new_u.lower(), new_p, new_e.lower(), "STEM", "HS"))
+                        st.success("✅ Account created! Switch to 'Log In'.")
+                else: st.error("❌ Security Keys do not match.")
+            else: st.warning("⚠️ Please fill in all fields.")
+                
+    elif auth_mode == "Reset Password":
+        st.subheader("System Override: Reset Key")
+        r_e = st.text_input("Registered Email")
+        r_p = st.text_input("New Security Key", type="password")
+        r_p2 = st.text_input("Confirm New Key", type="password")
+        
+        if st.button("Execute Reset"):
+            if r_e and r_p and r_p2:
+                if r_p == r_p2:
+                    res = db_q('SELECT username FROM users WHERE email=?', (r_e.lower(),), True)
+                    if res:
+                        db_q('UPDATE users SET password=? WHERE email=?', (r_p, r_e.lower()))
+                        st.success("✅ Security Key updated! Switch to 'Log In'.")
+                    else: st.error("❌ Email not found.")
+                else: st.error("❌ Keys do not match.")
+            else: st.warning("⚠️ Please fill in all fields.")
+
     st.stop()
 
 # --- PART 4: SIDEBAR ---
@@ -157,14 +204,12 @@ if st.session_state.get("pending_mutation"):
     st.markdown("## 🔬 Review Proposed DNA Mutation")
     st.warning("⚠️ **WARNING:** Approving this will permanently overwrite the `app.py` file on your server.")
     
-    # Display the AI's proposed new script
     st.code(st.session_state.pending_mutation, language="python")
     
     col1, col2 = st.columns(2)
     with col1:
         if st.button("⚠️ APPROVE & OVERWRITE APP", type="primary", use_container_width=True):
             try:
-                # Overwrite the file with the new DNA
                 with open(__file__, "w", encoding="utf-8") as file:
                     file.write(st.session_state.pending_mutation)
                 del st.session_state["pending_mutation"]
@@ -179,7 +224,7 @@ if st.session_state.get("pending_mutation"):
             st.info("Evolution aborted. Core remains unchanged.")
             st.rerun()
             
-    st.stop() # Halt the rest of the app while reviewing!
+    st.stop()
 
 # ==========================================
 # NORMAL CHAT & EVOLUTION TRIGGER
@@ -216,5 +261,9 @@ if user_in or uploaded_file:
                 
                 proposed_code = res.choices[0].message.content.strip()
                 
-                # Clean up markdown if the AI includes it
                 if proposed_code.startswith("
+http://googleusercontent.com/immersive_entry_chip/0
+http://googleusercontent.com/immersive_entry_chip/1
+http://googleusercontent.com/immersive_entry_chip/2
+
+Commit this, let the server reboot, and your picture and account tools will be back on screen alongside your calculator and evolution engine!
