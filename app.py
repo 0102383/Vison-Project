@@ -1,9 +1,7 @@
 import streamlit as st
 import sqlite3, base64, os, time, uuid, datetime
 import streamlit.components.v1 as components
-import matplotlib.pyplot as plt
-import numpy as np
-from fpdf import FPDF
+import math
 from groq import Groq
 
 # --- PART 1: SETTINGS & DATABASE ---
@@ -13,7 +11,8 @@ ADMIN = "0102383"
 
 def get_64(p):
     if os.path.exists(p):
-        with open(p, "rb") as f: return base64.b64encode(f.read()).decode()
+        with open(p, "rb") as f: 
+            return base64.b64encode(f.read()).decode()
     return None
 
 def db_q(q, d=(), fetch=False):
@@ -24,81 +23,184 @@ def db_q(q, d=(), fetch=False):
         res = c.fetchall() if fetch else None
         conn.commit()
         return res
-    finally: conn.close()
+    finally: 
+        conn.close()
 
 def init_db():
     db_q('''CREATE TABLE IF NOT EXISTS users (username TEXT PRIMARY KEY, password TEXT, email TEXT, interests TEXT, level TEXT, secret_profile TEXT DEFAULT 'No data yet.')''')
-    try: db_q('ALTER TABLE users ADD COLUMN email TEXT') 
-    except: pass
+    try: 
+        db_q('ALTER TABLE users ADD COLUMN email TEXT') 
+    except: 
+        pass
     db_q('''CREATE TABLE IF NOT EXISTS chat_log (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, role TEXT, content TEXT, session_id TEXT)''')
     db_q('''CREATE TABLE IF NOT EXISTS chat_sessions (session_id TEXT PRIMARY KEY, username TEXT, session_name TEXT, last_modified TEXT, mood_emoji TEXT DEFAULT '💬')''')
 
-# --- PART 2: CASIO CLASSWIZ ENGINE (HTML/JS) ---
+# --- PART 2: CASIO CLASSWIZ ENGINE (UPGRADED UI) ---
 def render_casio_calculator():
     CALC_HTML = """
     <style>
-        body { background-color: transparent; color: white; font-family: sans-serif; margin: 0; }
-        .calc-body { background: #333; border: 4px solid #fff; border-radius: 15px; width: 100%; max-width: 300px; padding: 15px; box-shadow: 0px 10px 30px rgba(0,0,0,0.7); margin: auto; }
-        .calc-screen { background-color: #a8b0a0; color: black; font-family: 'Courier New', monospace; font-size: 24px; text-align: right; padding: 10px; height: 50px; border-radius: 5px; margin-bottom: 15px; border: 2px solid #555; overflow: hidden;}
-        .btn-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
-        button { height: 40px; border-radius: 5px; border: 1px solid #555; font-size: 16px; font-weight: bold; cursor: pointer; transition: 0.1s; }
-        button:active { transform: translateY(2px); }
-        .btn-num { background-color: white; color: black; }
-        .btn-op { background-color: #555; color: white; }
-        .btn-del-ac { background-color: #2a52be; color: white; }
-        .btn-sci { background-color: #777; color: white; font-size: 12px;}
+        body { background-color: transparent; color: white; font-family: 'Arial', sans-serif; margin: 0; display: flex; justify-content: center;}
+        .calc-body { 
+            background: #222; 
+            background-image: radial-gradient(#333 15%, transparent 16%), radial-gradient(#333 15%, transparent 16%);
+            background-size: 6px 6px; 
+            background-position: 0 0, 3px 3px;
+            border: 2px solid #ddd; 
+            border-radius: 20px; 
+            width: 100%; 
+            max-width: 320px; 
+            padding: 20px 15px; 
+            box-shadow: 0px 15px 35px rgba(0,0,0,0.8), inset 0px 0px 10px rgba(0,0,0,0.5); 
+        }
+        .brand-header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 10px; }
+        .brand-name { font-size: 16px; font-weight: 900; letter-spacing: 1px; color: #eee; }
+        .model-name { font-size: 11px; font-style: italic; color: #ccc; }
+        .calc-screen { 
+            background-color: #b5bdad; 
+            color: #111; 
+            font-family: 'Courier New', monospace; 
+            font-size: 28px; 
+            text-align: right; 
+            padding: 10px; 
+            height: 60px; 
+            border-radius: 5px; 
+            margin-bottom: 20px; 
+            border: inset 3px #888; 
+            box-shadow: inset 2px 2px 5px rgba(0,0,0,0.3);
+            overflow: hidden;
+            display: flex;
+            align-items: flex-end;
+            justify-content: flex-end;
+        }
+        
+        .grid-5 { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px 6px; margin-top: 15px;}
+        .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px 6px; margin-top: 10px; padding: 0 10px;}
+        
+        button { 
+            height: 35px; 
+            border-radius: 4px; 
+            border: none; 
+            font-size: 14px; 
+            font-weight: bold; 
+            cursor: pointer; 
+            box-shadow: 0px 3px 0px rgba(0,0,0,0.5);
+            transition: all 0.1s; 
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        button:active { transform: translateY(3px); box-shadow: 0px 0px 0px rgba(0,0,0,0.5); }
+        
+        .btn-num { background-color: #f0f0f0; color: #111; border-top: 1px solid #fff; }
+        .btn-op { background-color: #333; color: white; border-top: 1px solid #555; }
+        .btn-del-ac { background-color: #2a52be; color: white; border-top: 1px solid #5a7add;}
+        .btn-sci { background-color: #111; color: #ddd; font-size: 11px; height: 28px; border-radius: 8px; box-shadow: 0px 2px 0px rgba(0,0,0,0.6);}
+        
+        .d-pad-container { display: flex; justify-content: center; margin: 15px 0; }
+        .d-pad { 
+            width: 80px; height: 60px; background: #ddd; border-radius: 40px; 
+            position: relative; box-shadow: inset 0px 0px 5px #555, 0px 5px 10px rgba(0,0,0,0.5);
+            background: linear-gradient(135deg, #e0e0e0, #999);
+        }
     </style>
     <div class="calc-body">
-        <div style="font-size:12px; font-weight:bold; margin-bottom:5px;">CASIO <span style="font-size:10px; color:#aaa; font-weight:normal;">fx-570EX CLASSWIZ</span></div>
+        <div class="brand-header">
+            <span class="brand-name">CASIO</span>
+            <span class="model-name">fx-570EX <span style="color:#d9534f;">CLASSWIZ</span></span>
+        </div>
         <div id="screen" class="calc-screen">0</div>
-        <div class="btn-grid">
-            <button class="btn-sci" onclick="press('sin(')">sin</button>
-            <button class="btn-sci" onclick="press('cos(')">cos</button>
-            <button class="btn-sci" onclick="press('tan(')">tan</button>
-            <button class="btn-sci" onclick="press('sqrt(')">√</button>
-            
+        
+        <!-- Fake D-Pad for visual accuracy -->
+        <div class="d-pad-container">
+            <div class="d-pad"></div>
+        </div>
+
+        <!-- Scientific Function Row (Simulated) -->
+        <div class="grid-4">
+            <button class="btn-sci" onclick="press('Math.sin(')">sin</button>
+            <button class="btn-sci" onclick="press('Math.cos(')">cos</button>
+            <button class="btn-sci" onclick="press('Math.tan(')">tan</button>
+            <button class="btn-sci" onclick="press('Math.log10(')">log</button>
+            <button class="btn-sci" onclick="press('Math.sqrt(')">√</button>
+            <button class="btn-sci" onclick="press('**2')">x²</button>
+            <button class="btn-sci" onclick="press('**')">x^</button>
+            <button class="btn-sci" onclick="press('Math.log(')">ln</button>
+        </div>
+
+        <!-- Main Numpad -->
+        <div class="grid-5">
             <button class="btn-num" onclick="press('7')">7</button>
             <button class="btn-num" onclick="press('8')">8</button>
             <button class="btn-num" onclick="press('9')">9</button>
+            <button class="btn-del-ac" onclick="backspace()">DEL</button>
             <button class="btn-del-ac" onclick="clear_screen()">AC</button>
             
             <button class="btn-num" onclick="press('4')">4</button>
             <button class="btn-num" onclick="press('5')">5</button>
             <button class="btn-num" onclick="press('6')">6</button>
             <button class="btn-op" onclick="press('*')">×</button>
+            <button class="btn-op" onclick="press('/')">÷</button>
             
             <button class="btn-num" onclick="press('1')">1</button>
             <button class="btn-num" onclick="press('2')">2</button>
             <button class="btn-num" onclick="press('3')">3</button>
-            <button class="btn-op" onclick="press('/')">÷</button>
+            <button class="btn-op" onclick="press('+')">+</button>
+            <button class="btn-op" onclick="press('-')">-</button>
             
             <button class="btn-num" onclick="press('0')">0</button>
             <button class="btn-num" onclick="press('.')">.</button>
-            <button class="btn-num" onclick="press('Math.PI')">π</button>
-            <button class="btn-op" onclick="press('-')">-</button>
-            
-            <button class="btn-op" style="grid-column: span 3;" onclick="press('+')">+</button>
+            <button class="btn-op" onclick="press('*10**')">x10ˣ</button>
+            <button class="btn-num" onclick="press('Ans')">Ans</button>
             <button class="btn-op" onclick="calculate()">=</button>
         </div>
     </div>
     <script>
         let expr = "";
-        function press(v) { expr += v; document.getElementById("screen").innerText = expr; }
-        function clear_screen() { expr = ""; document.getElementById("screen").innerText = "0"; }
-        function calculate() { try { document.getElementById("screen").innerText = eval(expr); } catch { document.getElementById("screen").innerText = "Error"; } }
+        let ans = 0;
+        const screen = document.getElementById("screen");
+        
+        function press(v) { 
+            if(expr === "Error" || screen.innerText === "Error") expr = "";
+            expr += v; 
+            screen.innerText = expr.replace(/Math\\./g, '').replace(/\\*\\*2/g, '²').replace(/\\*\\*/g, '^'); 
+        }
+        function clear_screen() { 
+            expr = ""; 
+            screen.innerText = "0"; 
+        }
+        function backspace() {
+            expr = expr.slice(0, -1);
+            screen.innerText = expr === "" ? "0" : expr.replace(/Math\\./g, '').replace(/\\*\\*2/g, '²').replace(/\\*\\*/g, '^');
+        }
+        function calculate() { 
+            try { 
+                let evalExpr = expr.replace(/Ans/g, ans);
+                let result = eval(evalExpr); 
+                // Fix precision issues
+                result = Math.round(result * 100000000) / 100000000;
+                ans = result;
+                screen.innerText = result; 
+                expr = result.toString();
+            } catch(e) { 
+                screen.innerText = "Error"; 
+                expr = "";
+            } 
+        }
     </script>
     """
-    components.html(CALC_HTML, height=400)
+    components.html(CALC_HTML, height=520)
 
 # --- PART 3: UI SETUP & AUTH (RESTORED GATEWAY) ---
 st.set_page_config(page_title="VISON AI STEM", layout="wide")
 init_db()
 
-if 'logged_in' not in st.session_state: st.session_state.logged_in = False
+if 'logged_in' not in st.session_state: 
+    st.session_state.logged_in = False
 
 if not st.session_state.logged_in:
     lb = get_64(LOGO_FILENAME)
-    if lb: st.markdown(f'<center><img src="data:image/jpeg;base64,{lb}" width="180"></center>', unsafe_allow_html=True)
+    if lb: 
+        st.markdown(f'<center><img src="data:image/jpeg;base64,{lb}" width="180"></center>', unsafe_allow_html=True)
     
     st.markdown("<h1 style='text-align: center;'>VISON CORE</h1>", unsafe_allow_html=True)
     
@@ -117,7 +219,8 @@ if not st.session_state.logged_in:
                     st.rerun()
                 else:
                     st.error("❌ Invalid Credentials.")
-            else: st.warning("⚠️ Please fill in all fields.")
+            else: 
+                st.warning("⚠️ Please fill in all fields.")
                 
     elif auth_mode == "Create Account":
         st.subheader("Initialize New Student")
@@ -128,15 +231,19 @@ if not st.session_state.logged_in:
         
         if st.button("Register Account"):
             if new_u and new_e and new_p and new_p2:
-                if "@" not in new_e: st.error("❌ Please enter a valid email address.")
+                if "@" not in new_e: 
+                    st.error("❌ Please enter a valid email address.")
                 elif new_p == new_p2:
                     res = db_q('SELECT username FROM users WHERE username=? OR email=?', (new_u.lower(), new_e.lower()), True)
-                    if res: st.error("❌ User ID or Email already registered.")
+                    if res: 
+                        st.error("❌ User ID or Email already registered.")
                     else:
                         db_q('INSERT INTO users (username, password, email, interests, level) VALUES (?,?,?,?,?)', (new_u.lower(), new_p, new_e.lower(), "STEM", "HS"))
                         st.success("✅ Account created! Switch to 'Log In'.")
-                else: st.error("❌ Security Keys do not match.")
-            else: st.warning("⚠️ Please fill in all fields.")
+                else: 
+                    st.error("❌ Security Keys do not match.")
+            else: 
+                st.warning("⚠️ Please fill in all fields.")
                 
     elif auth_mode == "Reset Password":
         st.subheader("System Override: Reset Key")
@@ -151,16 +258,21 @@ if not st.session_state.logged_in:
                     if res:
                         db_q('UPDATE users SET password=? WHERE email=?', (r_p, r_e.lower()))
                         st.success("✅ Security Key updated! Switch to 'Log In'.")
-                    else: st.error("❌ Email not found.")
-                else: st.error("❌ Keys do not match.")
-            else: st.warning("⚠️ Please fill in all fields.")
+                    else: 
+                        st.error("❌ Email not found.")
+                else: 
+                    st.error("❌ Keys do not match.")
+            else: 
+                st.warning("⚠️ Please fill in all fields.")
 
     st.stop()
 
 # --- PART 4: SIDEBAR ---
 with st.sidebar:
     st.title(f"🚀 {st.session_state.username.upper()}")
-    if st.button("Logout"): st.session_state.clear(); st.rerun()
+    if st.button("Logout"): 
+        st.session_state.clear()
+        st.rerun()
     
     st.divider()
     render_casio_calculator()
@@ -174,7 +286,8 @@ with st.sidebar:
     if st.button("➕ New Session"):
         nid = str(uuid.uuid4())
         db_q('INSERT INTO chat_sessions (session_id, username, session_name, last_modified) VALUES (?,?,?,?)', (nid, st.session_state.username, "New Session", "Now"))
-        st.session_state.sid = nid; st.rerun()
+        st.session_state.sid = nid
+        st.rerun()
     
     if sessions:
         s_dict = {s[1]: s[0] for s in sessions}
@@ -187,7 +300,8 @@ if 'sid' not in st.session_state:
     st.session_state.sid = str(uuid.uuid4())
     db_q('INSERT OR IGNORE INTO chat_sessions (session_id, username, session_name, last_modified) VALUES (?,?,?,?)', (st.session_state.sid, st.session_state.username, "Main Chat", "Now"))
 
-if "messages" not in st.session_state: st.session_state.messages = []
+if "messages" not in st.session_state: 
+    st.session_state.messages = []
 
 ai_av = f"data:image/png;base64,{get_64(AI_AVATAR_FILENAME)}" if get_64(AI_AVATAR_FILENAME) else "🤖"
 for m in st.session_state.messages:
@@ -262,4 +376,60 @@ if user_in or uploaded_file:
                 proposed_code = res.choices[0].message.content.strip()
                 
                 # Robust stripping of markdown to prevent syntax errors
-                if proposed_code.startswith("
+                if proposed_code.startswith("```python"):
+                    proposed_code = proposed_code.split("```python", 1)[1]
+                elif proposed_code.startswith("```"):
+                    proposed_code = proposed_code.split("```", 1)[1]
+                    
+                if proposed_code.endswith("```"):
+                    proposed_code = proposed_code.rsplit("```", 1)[0]
+                    
+                st.session_state.pending_mutation = proposed_code.strip()
+                st.rerun() 
+                
+            except Exception as e:
+                st.error(f"Evolution failed to synthesize: {e}")
+                st.stop()
+
+    # --- NORMAL CHAT FLOW ---
+    try:
+        model_to_use = "llama-3.2-11b-vision-preview" if uploaded_file else "llama-3.3-70b-versatile"
+        display_text = user_in if user_in else "Analyze this image."
+        
+        if uploaded_file:
+            mime_type = uploaded_file.type 
+            img_b64 = base64.b64encode(uploaded_file.getvalue()).decode()
+            content_payload = [{"type": "text", "text": display_text}, {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{img_b64}"}}]
+            with st.chat_message("user", avatar="👤"):
+                st.image(uploaded_file, width=300)
+                st.markdown(display_text)
+        else:
+            content_payload = display_text
+            with st.chat_message("user", avatar="👤"):
+                st.markdown(display_text)
+
+        db_q('INSERT INTO chat_log (username, role, content, session_id) VALUES (?,?,?,?)', (st.session_state.username, "user", display_text, st.session_state.sid))
+        st.session_state.messages.append({"role": "user", "content": display_text})
+
+        with st.chat_message("assistant", avatar=ai_av):
+            sys_prompt = f"You are a {persona} in {lang}. Use LaTeX ($) for math."
+            hist = [{"role": m["role"], "content": m["content"]} for m in st.session_state.messages[-8:-1]]
+            
+            if uploaded_file:
+                final_messages = hist + [{"role": "user", "content": content_payload}]
+            else:
+                final_messages = [{"role": "system", "content": sys_prompt}] + hist + [{"role": "user", "content": display_text}]
+            
+            res = client.chat.completions.create(model=model_to_use, messages=final_messages)
+            ans = res.choices[0].message.content
+            st.markdown(ans)
+            st.session_state.messages.append({"role": "assistant", "content": ans})
+            db_q('INSERT INTO chat_log (username, role, content, session_id) VALUES (?,?,?,?)', (st.session_state.username, "assistant", ans, st.session_state.sid))
+
+    except Exception as e:
+        if "AuthenticationError" in str(e) or "401" in str(e):
+            st.error("🚨 **Authentication Failed!** Your Groq API key is invalid or expired.")
+        else:
+            st.error(f"⚠️ **Engine Error:** {e}")
+
+components.html("<script>window.parent.document.querySelectorAll('.stChatMessage').forEach(el => el.scrollIntoView({behavior:'smooth'}));</script>", height=0)
