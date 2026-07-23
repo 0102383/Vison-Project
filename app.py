@@ -1,8 +1,11 @@
 import streamlit as st
 import sqlite3, base64, os, time, uuid, datetime
 import streamlit.components.v1 as components
-import math
+import matplotlib.pyplot as plt
+import numpy as np
+from fpdf import FPDF
 from groq import Groq
+import requests
 
 # --- PART 1: SETTINGS & DATABASE ---
 LOGO_FILENAME = "vison_logo.jpg"
@@ -35,7 +38,20 @@ def init_db():
     db_q('''CREATE TABLE IF NOT EXISTS chat_log (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, role TEXT, content TEXT, session_id TEXT)''')
     db_q('''CREATE TABLE IF NOT EXISTS chat_sessions (session_id TEXT PRIMARY KEY, username TEXT, session_name TEXT, last_modified TEXT, mood_emoji TEXT DEFAULT '💬')''')
 
-# --- PART 2: CASIO CLASSWIZ ENGINE (UPGRADED UI) ---
+def fetch_stem_news():
+    """Fetches the latest science and technology news from NewsData.io"""
+    if "NEWSDATA_API_KEY" not in st.secrets:
+        return None
+    try:
+        url = f"https://newsdata.io/api/1/news?apikey={st.secrets['NEWSDATA_API_KEY']}&q=technology OR science&language=en"
+        res = requests.get(url).json()
+        if res.get("status") == "success":
+            return res.get("results", [])[:3] # Returns the top 3 news articles
+        return []
+    except Exception:
+        return []
+
+# --- PART 2: CASIO CLASSWIZ ENGINE ---
 def render_casio_calculator():
     CALC_HTML = """
     <style>
@@ -110,12 +126,12 @@ def render_casio_calculator():
         </div>
         <div id="screen" class="calc-screen">0</div>
         
-        <!-- Fake D-Pad for visual accuracy -->
+        <!-- Fake D-Pad -->
         <div class="d-pad-container">
             <div class="d-pad"></div>
         </div>
 
-        <!-- Scientific Function Row (Simulated) -->
+        <!-- Scientific Function Row -->
         <div class="grid-4">
             <button class="btn-sci" onclick="press('Math.sin(')">sin</button>
             <button class="btn-sci" onclick="press('Math.cos(')">cos</button>
@@ -176,7 +192,6 @@ def render_casio_calculator():
             try { 
                 let evalExpr = expr.replace(/Ans/g, ans);
                 let result = eval(evalExpr); 
-                // Fix precision issues
                 result = Math.round(result * 100000000) / 100000000;
                 ans = result;
                 screen.innerText = result; 
@@ -190,7 +205,7 @@ def render_casio_calculator():
     """
     components.html(CALC_HTML, height=520)
 
-# --- PART 3: UI SETUP & AUTH (RESTORED GATEWAY) ---
+# --- PART 3: UI SETUP & AUTH ---
 st.set_page_config(page_title="VISON AI STEM", layout="wide")
 init_db()
 
@@ -295,6 +310,19 @@ with st.sidebar:
         st.session_state.sid = s_dict[sel]
         st.session_state.messages = [{"role":r, "content":c} for r,c in db_q('SELECT role, content FROM chat_log WHERE session_id=?', (st.session_state.sid,), True)]
 
+    st.divider()
+    st.subheader("📰 Live STEM News")
+    if st.button("Fetch Latest News", use_container_width=True):
+        with st.spinner("Fetching global updates..."):
+            news = fetch_stem_news()
+            if news is None:
+                st.error("🚨 API Key missing! Add NEWSDATA_API_KEY to secrets.")
+            elif news:
+                for article in news:
+                    st.markdown(f"🔹 **[{article.get('title', 'News Article')}]({article.get('link', '#')})**")
+            else:
+                st.info("No relevant news found at this time.")
+
 # --- PART 5: CHAT LOGIC & EVOLUTION ENGINE ---
 if 'sid' not in st.session_state:
     st.session_state.sid = str(uuid.uuid4())
@@ -375,14 +403,19 @@ if user_in or uploaded_file:
                 
                 proposed_code = res.choices[0].message.content.strip()
                 
-                # Robust stripping of markdown to prevent syntax errors
-                if proposed_code.startswith("```python"):
-                    proposed_code = proposed_code.split("```python", 1)[1]
-                elif proposed_code.startswith("```"):
-                    proposed_code = proposed_code.split("```", 1)[1]
+                # Dynamic backtick generation to hide from Streamlit AST parser 
+                cb = chr(96) * 3 
+                if proposed_code.startswith(f"{cb}python\n"):
+                    proposed_code = proposed_code.split(f"{cb}python\n", 1)[1]
+                elif proposed_code.startswith(f"{cb}python"):
+                    proposed_code = proposed_code.split(f"{cb}python", 1)[1]
+                elif proposed_code.startswith(f"{cb}\n"):
+                    proposed_code = proposed_code.split(f"{cb}\n", 1)[1]
+                elif proposed_code.startswith(cb):
+                    proposed_code = proposed_code.split(cb, 1)[1]
                     
-                if proposed_code.endswith("```"):
-                    proposed_code = proposed_code.rsplit("```", 1)[0]
+                if proposed_code.endswith(cb):
+                    proposed_code = proposed_code.rsplit(cb, 1)[0]
                     
                 st.session_state.pending_mutation = proposed_code.strip()
                 st.rerun() 
